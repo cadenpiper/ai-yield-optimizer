@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
@@ -10,20 +10,21 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @notice This implementation may not be correct. Refer to Aave & Morpho Blue documentation
  * for the correct function calls and integrations before using in production.
  */
+
+// **NOTE:** Replace these with the correct interfaces for Aave & Morpho Blue.
+interface IAavePool {
+    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
+    function withdraw(address asset, uint256 amount, address to) external returns (uint256);
+}
+
+interface IMorphoBlue {
+    function supply(address poolToken, uint256 amount, address onBehalfOf) external;
+    function withdraw(address poolToken, uint256 amount, address to) external;
+}
+
 contract MigrateLiquidity is ReentrancyGuard {
     address public owner;
-    IERC20 public constant USDC = IERC20(0xUSDC_ADDRESS_ON_BASE);
-
-    // **NOTE:** Replace these with the correct interfaces for Aave & Morpho Blue.
-    interface IAavePool {
-        function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
-        function withdraw(address asset, uint256 amount, address to) external returns (uint256);
-    }
-
-    interface IMorphoBlue {
-        function supply(address poolToken, uint256 amount, address onBehalfOf) external;
-        function withdraw(address poolToken, uint256 amount, address to) external;
-    }
+    IERC20 public usdc;
 
     IAavePool public aavePool;
     IMorphoBlue public morphoBlue;
@@ -39,10 +40,11 @@ contract MigrateLiquidity is ReentrancyGuard {
      * @dev Constructor sets the initial contract owner and lending pool addresses.
      * @notice Ensure that `_aavePool` and `_morphoBlue` are set to the correct Base addresses.
      */
-    constructor(address _aavePool, address _morphoBlue) {
+    constructor(address _aavePool, address _morphoBlue, address _usdcAddress) {
         owner = msg.sender;
         aavePool = IAavePool(_aavePool);
         morphoBlue = IMorphoBlue(_morphoBlue);
+        usdc = IERC20(_usdcAddress);
     }
 
     /**
@@ -50,9 +52,9 @@ contract MigrateLiquidity is ReentrancyGuard {
      * @notice Check Aave's official docs for the correct function calls.
      */
     function depositToAave(uint256 amount) external nonReentrant {
-        USDC.transferFrom(msg.sender, address(this), amount);
-        USDC.approve(address(aavePool), amount);
-        aavePool.supply(address(USDC), amount, msg.sender, 0);
+        usdc.transferFrom(msg.sender, address(this), amount);
+        usdc.approve(address(aavePool), amount);
+        aavePool.supply(address(usdc), amount, msg.sender, 0);
     }
 
     /**
@@ -60,9 +62,9 @@ contract MigrateLiquidity is ReentrancyGuard {
      * @notice Check Morpho Blue's official docs for the correct function calls.
      */
     function depositToMorpho(uint256 amount) external nonReentrant {
-        USDC.transferFrom(msg.sender, address(this), amount);
-        USDC.approve(address(morphoBlue), amount);
-        morphoBlue.supply(address(USDC), amount, msg.sender);
+        usdc.transferFrom(msg.sender, address(this), amount);
+        usdc.approve(address(morphoBlue), amount);
+        morphoBlue.supply(address(usdc), amount, msg.sender);
     }
 
     /**
@@ -74,15 +76,15 @@ contract MigrateLiquidity is ReentrancyGuard {
     function migrateLiquidity(uint256 amount, bool fromAaveToMorpho) external nonReentrant onlyOwner {
         if (fromAaveToMorpho) {
             // **Withdraw from Aave and deposit into Morpho Blue**
-            uint256 withdrawnAmount = aavePool.withdraw(address(USDC), amount, address(this));
-            USDC.approve(address(morphoBlue), withdrawnAmount);
-            morphoBlue.supply(address(USDC), withdrawnAmount, msg.sender);
+            uint256 withdrawnAmount = aavePool.withdraw(address(usdc), amount, address(this));
+            usdc.approve(address(morphoBlue), withdrawnAmount);
+            morphoBlue.supply(address(usdc), withdrawnAmount, msg.sender);
             emit LiquidityMigrated(msg.sender, withdrawnAmount, "Aave", "MorphoBlue");
         } else {
             // **Withdraw from Morpho Blue and deposit into Aave**
-            morphoBlue.withdraw(address(USDC), amount, address(this));
-            USDC.approve(address(aavePool), amount);
-            aavePool.supply(address(USDC), amount, msg.sender, 0);
+            morphoBlue.withdraw(address(usdc), amount, address(this));
+            usdc.approve(address(aavePool), amount);
+            aavePool.supply(address(usdc), amount, msg.sender, 0);
             emit LiquidityMigrated(msg.sender, amount, "MorphoBlue", "Aave");
         }
     }
@@ -91,14 +93,14 @@ contract MigrateLiquidity is ReentrancyGuard {
      * @dev Withdraw USDC from Aave.
      */
     function withdrawFromAave(uint256 amount) external nonReentrant {
-        aavePool.withdraw(address(USDC), amount, msg.sender);
+        aavePool.withdraw(address(usdc), amount, msg.sender);
     }
 
     /**
      * @dev Withdraw USDC from Morpho Blue.
      */
     function withdrawFromMorpho(uint256 amount) external nonReentrant {
-        morphoBlue.withdraw(address(USDC), amount, msg.sender);
+        morphoBlue.withdraw(address(usdc), amount, msg.sender);
     }
 
     /**
