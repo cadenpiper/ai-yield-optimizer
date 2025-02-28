@@ -1,0 +1,29 @@
+specVersion: 1.2.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: APYStorage
+    network: base-sepolia
+    source:
+      address: "0xce52BC5c88c7bD76b17e05674e33380AA892D491"
+      abi: APYStorage
+      startBlock: 22469533
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - APYUpdated
+        - OwnershipTransferred
+      abis:
+        - name: APYStorage
+          file: ./abis/APYStorage.json
+      eventHandlers:
+        - event: APYUpdated(indexed address,uint256,uint256)
+          handler: handleAPYUpdated
+        - event: OwnershipTransferred(indexed address,indexed address)
+          handler: handleOwnershipTransferred
+      file: ./src/apy-storage.ts

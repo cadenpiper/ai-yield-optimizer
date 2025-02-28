@@ -1,0 +1,8 @@
+{
+  "base-sepolia": {
+    "APYStorage": {
+      "address": "0xce52BC5c88c7bD76b17e05674e33380AA892D491",
+      "startBlock": 22469533
+    }
+  }
+}
