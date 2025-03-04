@@ -3,56 +3,70 @@ require("dotenv").config();
 const { ethers } = require("ethers");
 
 /////////////////////////////////////////////////////////////////////////////
-/////////// Fetching Pool Addresses from AAVE V3 and Morpho Blue
+/////////// CONFIGURATION & PROVIDERS
 /////////////////////////////////////////////////////////////////////////////
 
+// Querying subgraphs on Base mainnet
 const provider = new ethers.JsonRpcProvider(`https://base-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`);
 
-const MORPHO_BLUE_SUBGRAPH_URL = `https://gateway.thegraph.com/api/${process.env.GRAPHQL_API_KEY}/subgraphs/id/71ZTy1veF9twER9CLMnPWeLQ7GZcwKsjmygejrgKirqs`;
+// Signing transactions on Base Sepolia (Storing APYs in APYStorage.sol)
+const sepoliaProvider = new ethers.JsonRpcProvider(`https://base-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`)
+const signer = new ethers.Wallet(process.env.PRIVATE_KEY, sepoliaProvider);
+
+/////////////////////////////////////////////////////////////////////////////
+/////////// SUBGRAPH ENDPOINTS
+/////////////////////////////////////////////////////////////////////////////
+
+const MOONWELL_SUBGRAPH_URL = `https://gateway.thegraph.com/api/${process.env.GRAPHQL_API_KEY}/subgraphs/id/33ex1ExmYQtwGVwri1AP3oMFPGSce6YbocBP7fWbsBrg`;
+const AAVE_V3_SUBGRAPH_URL = `https://gateway.thegraph.com/api/${process.env.GRAPHQL_API_KEY}/subgraphs/id/GQFbb95cE6d8mV989mL5figjaGaKCQB3xqYrr1bRyXqF`;
+
+/////////////////////////////////////////////////////////////////////////////
+/////////// FETCH POOL ADDRESSES
+/////////////////////////////////////////////////////////////////////////////
 
 const POOL_ADDRESSES_PROVIDER = "0xe20fCBdBfFC4Dd138cE8b2E6FBb6CB49777ad64D"; // Aave PoolAddressesProvider on Base
-
 const ABI = [
   "function getPool() external view returns (address)"
 ];
 
-const morphoPoolQuery = gql`
+const moonwellQuery = gql`
 {
-  interestRates(
-    where: { market_: { inputToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" }, side: LENDER }
-    orderBy: rate
-    orderDirection: desc
-    first: 1
-  ) {
+  markets(where: { inputToken_: { symbol: "USDC" } }) {
     id
-    rate
-    market {
-      id
-      name
-      inputToken {
-        symbol
-      }
-      irm
+    name
+    inputToken {
+      symbol
+    }
+    rates(
+      where: { side: LENDER }
+      orderBy: rate
+      orderDirection: desc
+      first: 1
+    ) {
+      rate
+      type
+      side
     }
   }
 }
 `;
 
-async function getMorphoPoolAddress() {
+async function getMoonwellPoolAddress() {
   try {
-    console.log("\nFetching Morpho Blue pool address...");
-    const data = await request(MORPHO_BLUE_SUBGRAPH_URL, morphoPoolQuery);
-    const market = data.interestRates[0];
-
-    if (!market) {
-      console.log("No USDC lending pools found on Morpho.\n");
+    console.log("\nFetching Moonwell pool address...");
+    const data = await request(MOONWELL_SUBGRAPH_URL, moonwellQuery);
+    
+    if (!data.markets || data.markets.length === 0) {
+      console.log("No USDC lending pools found on Moonwell.\n");
       return null;
     }
 
-    console.log(`Morpho Pool Address: ${market.market.irm}\n`);
-    return market.market.irm;
+    const market = data.markets[0];
+    console.log(`Moonwell Pool Address: ${market.id}`);
+
+    return market.id;
   } catch (error) {
-    console.error("Error fetching Morpho Blue Pool Address:", error);
+    console.error("Error fetching Moonwell Pool Address:", error);
     return null;
   }
 }
@@ -60,9 +74,11 @@ async function getMorphoPoolAddress() {
 async function getAavePoolAddress() {
   try {
     console.log("Fetching Aave V3 pool address...\n");
+
     const providerContract = new ethers.Contract(POOL_ADDRESSES_PROVIDER, ABI, provider);
     const poolAddress = await providerContract.getPool();
     console.log(`Aave V3 Pool Address: ${poolAddress}`);
+
     return poolAddress;
   } catch (error) {
     console.error("Error fetching Aave Pool Address:\n", error, "\n");
@@ -71,30 +87,8 @@ async function getAavePoolAddress() {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-/////////// Fetching APYs from AAVE V3 and Morpho Blue
+/////////// FETCH APYs
 /////////////////////////////////////////////////////////////////////////////
-
-const apiKey = process.env.GRAPHQL_API_KEY;
-
-const morphoEndpoint = `https://gateway.thegraph.com/api/${apiKey}/subgraphs/id/71ZTy1veF9twER9CLMnPWeLQ7GZcwKsjmygejrgKirqs`;
-const aaveEndpoint = `https://gateway.thegraph.com/api/${apiKey}/subgraphs/id/GQFbb95cE6d8mV989mL5figjaGaKCQB3xqYrr1bRyXqF`;
-
-const morphoAPYQuery = gql`
-{
-  interestRates(
-    where: { market_: { inputToken: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" }, side: LENDER } 
-    orderBy: rate
-    orderDirection: desc
-    first: 1
-  ) {
-    id
-    rate
-    market {
-      name
-    }
-  }
-}
-`;
 
 const aaveAPYQuery = gql`
 {
@@ -110,27 +104,33 @@ const aaveAPYQuery = gql`
 }
 `;
 
-async function fetchMorphoAPY(morphoPoolAddress) {
+async function fetchMoonwellAPY() {
   try {
-    if (!morphoPoolAddress) throw new Error("Morpho pool address is missing.");
+    console.log("\nFetching Moonwell APY...");
 
-    console.log("\nFetching Morpho Blue APY...");
-    const data = await request(morphoEndpoint, morphoAPYQuery);
-    const market = data.interestRates[0];
+    const data = await request(MOONWELL_SUBGRAPH_URL, moonwellQuery);
 
-    if (!market) {
-      console.log("No USDC lending pools found.\n");
+    if (!data?.markets || data.markets.length === 0) {
+      console.log("No Moonwell lending pools found.\n");
       return;
     }
 
-    const morphoAPY = Number(market.rate).toFixed(2);
-    console.log(`Best Morpho USDC Pool: ${market.market.name}`);
-    console.log(`APY: ${morphoAPY}%`);
-    console.log(`Pool Address: ${morphoPoolAddress}\n`);
+    const market = data.markets[0];
 
-    return { poolAddress: morphoPoolAddress, poolName: market.market.name, apy: morphoAPY };
+    if (!market.rates || market.rates.length === 0) {
+      console.log("No lender-side rates found for this market.\n");
+      return;
+    }
+
+    const formattedApy = parseFloat(market.rates[0].rate).toFixed(2); // Format to 2 decimal places
+
+    console.log(`Best Moonwell USDC Pool: ${market.name}`);
+    console.log(`APY: ${formattedApy}%`);
+    console.log(`Pool Address: ${market.id}\n`);
+
+    return { poolAddress: market.id, poolName: market.name, apy: formattedApy };
   } catch (error) {
-    console.error("Error fetching Morpho APY:\n", error, "\n");
+    console.error("Error fetching Moonwell APY:\n", error, "\n");
   }
 }
 
@@ -139,7 +139,7 @@ async function fetchAaveAPY(aavePoolAddress) {
     if (!aavePoolAddress) throw new Error("Aave pool address is missing.");
 
     console.log("Fetching Aave V3 APY...\n");
-    const data = await request(aaveEndpoint, aaveAPYQuery);
+    const data = await request(AAVE_V3_SUBGRAPH_URL, aaveAPYQuery);
     const reserve = data.reserves[0];
 
     if (!reserve) {
@@ -162,30 +162,24 @@ async function fetchAaveAPY(aavePoolAddress) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-/////////// Store APY data on APYStorage.sol file
+/////////// STORING APY DATA IN APYStorage.sol
 /////////////////////////////////////////////////////////////////////////////
 
-const RPC_URL_SEPOLIA = "https://base-sepolia.g.alchemy.com/v2/" + process.env.ALCHEMY_API_KEY;
-const sepoliaProvider = new ethers.JsonRpcProvider(RPC_URL_SEPOLIA);
-
-const signer = new ethers.Wallet(process.env.PRIVATE_KEY, sepoliaProvider);
-
-const APY_STORAGE_ADDRESS = "0xce52BC5c88c7bD76b17e05674e33380AA892D491"; // APY Storage contract on Base Sepolia
-
+const APY_STORAGE_ADDRESS = "0xce52BC5c88c7bD76b17e05674e33380AA892D491"; // APYStorage.sol contract on Base Sepolia
 const APY_STORAGE_ABI = [
   "function updateAPY(address _pool, uint256 _newAPY) external"
 ];
 
 const apyStorage = new ethers.Contract(APY_STORAGE_ADDRESS, APY_STORAGE_ABI, signer);
 
-async function storeAPYs(morphoPoolAddress, aavePoolAddress, morphoAPY, aaveAPY) {
+async function storeAPYs(moonwellPoolAddress, aavePoolAddress, moonwellAPY, aaveAPY) {
   try {
-    console.log(`Updating APYs in contract...`);
-    console.log(`Aave Pool: ${aavePoolAddress} | APY: ${aaveAPY / 1e2}%`);
-    console.log(`Morpho Pool: ${morphoPoolAddress} | APY: ${(morphoAPY / 1e2).toFixed(2)}%`);
+    console.log(`/////////Updating APYs in contract/////////`);
+    console.log(`\nAave Pool: ${aavePoolAddress} | APY: ${aaveAPY / 1e2}%`);
+    console.log(`Moonwell Pool: ${moonwellPoolAddress} | APY: ${(moonwellAPY / 1e2).toFixed(2)}%\n`);
 
     await safeUpdateAPY(aavePoolAddress, aaveAPY, "Aave");
-    await safeUpdateAPY(morphoPoolAddress, morphoAPY, "Morpho");
+    await safeUpdateAPY(moonwellPoolAddress, moonwellAPY, "Moonwell");
 
   } catch (error) {
     console.error("Error fetching APYs:", error);
@@ -208,42 +202,42 @@ async function safeUpdateAPY(poolAddress, formattedAPY, name) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-/////////// Running Everything in Sequence
+/////////// RUNNING EVERYTHING IN SEQUENCE
 /////////////////////////////////////////////////////////////////////////////
 
 async function main() {
-  console.log("\n\n\nFetching pool addresses...");
+  console.log("\n\n\n/////////Fetching pool addresses/////////");
 
   // Fetch pool addresses
-  const [morphoPoolAddress, aavePoolAddress] = await Promise.all([
-    getMorphoPoolAddress(),
+  const [moonwellPoolAddress, aavePoolAddress] = await Promise.all([
+    getMoonwellPoolAddress(),
     getAavePoolAddress(),
   ]);
 
-  if (!morphoPoolAddress || !aavePoolAddress) {
+  if (!moonwellPoolAddress || !aavePoolAddress) {
     console.error("Failed to fetch one or both pool addresses. Exiting.");
     return;
   }
 
-  console.log("\n\nFetching APY data...");
+  console.log("\n/////////Fetching APY data/////////");
 
   // Fetch APY data
-  const [morphoAPYData, aaveAPYData] = await Promise.all([
-    fetchMorphoAPY(morphoPoolAddress),
+  const [moonwellAPYData, aaveAPYData] = await Promise.all([
+    fetchMoonwellAPY(),
     fetchAaveAPY(aavePoolAddress),
   ]);
 
-  if (!morphoAPYData || !aaveAPYData) {
+  if (!moonwellAPYData || !aaveAPYData) {
     console.error("Failed to fetch one or both APY values. Exiting.");
     return;
   }
 
-  console.log("\n\nAll APY data fetched successfully.\n");
+  console.log("/////////All APY data fetched successfully/////////\n");
 
   await storeAPYs(
-    morphoPoolAddress,
+    moonwellPoolAddress,
     aavePoolAddress,
-    parseFloat(morphoAPYData.apy) * 1e2,
+    parseFloat(moonwellAPYData.apy) * 1e2,
     parseFloat(aaveAPYData.apy) * 1e2
   );
 }
