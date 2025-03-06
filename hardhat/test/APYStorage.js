@@ -38,7 +38,7 @@ describe("APYStorage", function () {
     it("should reject unless owner or whitelisted", async function () {
       await expect(
           apyStorage.connect(unauthorizedUser).updateAPY(mockPoolAddress, mockAPYValue)
-      ).to.be.revertedWith("Not authorized to update APY");
+      ).to.be.revertedWith("Not authorized.");
 
       await apyStorage.connect(owner).whitelistAccount(unauthorizedUser.getAddress());
       await apyStorage.connect(unauthorizedUser).updateAPY(mockPoolAddress, mockAPYValue);

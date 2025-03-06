@@ -4,7 +4,6 @@ pragma solidity ^0.8.28;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract APYStorage is Ownable {
-
     struct APYData {
         uint256 apy;
         uint256 lastUpdated;
@@ -17,25 +16,44 @@ contract APYStorage is Ownable {
 
     constructor() Ownable(msg.sender) {}
 
-    function updateAPY(address _pool, uint256 _newAPY) external {
-        require(msg.sender == owner() || whitelistedAccounts[msg.sender], 'Not authorized to update APY');
-        require(_newAPY != apyRecords[_pool].apy, 'APY Has not changed, already set');
-        require(_newAPY > 0, "APY cannot be negative");
+    modifier onlyWhitelisted() {
+        require(msg.sender == owner() || whitelistedAccounts[msg.sender], 'Not authorized.');
+        _;
+    }
 
-        apyRecords[_pool] = APYData(_newAPY, block.timestamp);
+    /**
+     * @dev Updates the APY for a given pool.
+     * @param _pool The pool address.
+     * @param _newAPY The new APY value.
+     */
+    function updateAPY(address _pool, uint256 _newAPY) external onlyWhitelisted {
+        APYData storage record = apyRecords[_pool];
+        require(_newAPY != record.apy, 'APY has not changed');
+
+        record.apy = _newAPY;
+        record.lastUpdated = block.timestamp;
         emit APYUpdated(_pool, _newAPY, block.timestamp);
     }
 
+    /**
+     * @dev Returns the APY and last updated timestamp for a pool.
+     */
     function getAPY(address _pool) external view returns (uint256, uint256) {
         APYData memory data = apyRecords[_pool];
         return (data.apy, data.lastUpdated);
     }
 
+    /**
+     * @dev Whitelists an account for APY updates.
+     */
     function whitelistAccount(address _account) external onlyOwner {
         whitelistedAccounts[_account] = true;
     }
 
+    /**
+     * @dev Removes an account from the whitelist.
+     */
     function removeWhitelist(address _account) external onlyOwner {
-        whitelistedAccounts[_account] = false;
+        delete whitelistedAccounts[_account]; // Gas optimized removal
     }
 }
