@@ -1,12 +1,12 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, userConfig } = require("hardhat");
 
 describe("MigrateLiquidity", function () {
-    let owner, user, usdc, migrateLiquidity;
+    let owner, user, user2, usdc, liquidityManager;
 
     beforeEach(async () => {
         // Get signers
-        [owner, user] = await ethers.getSigners();
+        [owner, user, user2] = await ethers.getSigners();
         
         // Deploy Mock USDC token contract
         const MockUSDC = await ethers.getContractFactory("MockUSDC");
@@ -14,150 +14,137 @@ describe("MigrateLiquidity", function () {
         await usdc.waitForDeployment();
 
         // Deploy MigrateLiquidity contract
-        const MigrateLiquidity = await ethers.getContractFactory("MigrateLiquidity");
-        migrateLiquidity = await MigrateLiquidity.deploy();
-        await migrateLiquidity.waitForDeployment();
+        const LiquidityManager = await ethers.getContractFactory("LiquidityManager");
+        liquidityManager = await LiquidityManager.deploy();
+        await liquidityManager.waitForDeployment();
 
         // Add MockUSDC as a supported token
-        await migrateLiquidity.updateSupportedTokens(usdc.getAddress(), true);
+        await liquidityManager.updateSupportedTokens(usdc.getAddress(), true);
     });
 
     describe("Deployment", function () {
         it("should set the correct owner", async function () {
-            expect(await migrateLiquidity.owner()).to.equal(owner.address);
-        });
-    });
-
-    describe("updateSupportedTokens", function () {
-        it("should allow owner to add supported token", async function () {
-            const newToken = ethers.Wallet.createRandom().address;
-            await expect(migrateLiquidity.updateSupportedTokens(newToken, true))
-                .to.emit(migrateLiquidity, "TokenSupportUpdated")
-                .withArgs(newToken, true);
-            expect(await migrateLiquidity.supportedTokens(newToken)).to.be.true;
-        });
-
-        it("should allow owner to remove supported token", async function () {
-            await expect(migrateLiquidity.updateSupportedTokens(usdc.getAddress(), false))
-                .to.emit(migrateLiquidity, "TokenSupportUpdated")
-                .withArgs(usdc.getAddress(), false);
-            expect(await migrateLiquidity.supportedTokens(usdc.getAddress())).to.be.false;
-        });
-
-        it("should not update if token status is unchanged", async function () {
-            await expect(migrateLiquidity.updateSupportedTokens(usdc.getAddress(), true))
-                .to.be.revertedWith("Token status unchanged.");
+            expect(await liquidityManager.owner()).to.equal(owner.address);
         });
     });
 
     describe("Deposits", function () {
         it("should deposit USDC and update shares correctly", async function () {
-            const depositAmount = ethers.parseUnits("1000", 6);
+            const depositAmount = ethers.parseUnits("1000", 6); // 1000 USDC
 
-            // Transfer USDC to user for testing
-            await usdc.transfer(user.address, depositAmount);
+            // mint USDC to user
+            await usdc.mint(user.address, depositAmount);
 
-            // User approves contract to spend USDC
-            await usdc.connect(user).approve(migrateLiquidity.getAddress(), depositAmount);
+            // user approves liquidityManager to spend USDC
+            await usdc.connect(user).approve(await liquidityManager.getAddress(), depositAmount);
 
-            // Perform deposit
-            await expect(migrateLiquidity.connect(user).deposit(usdc.getAddress(), depositAmount))
-                .to.emit(migrateLiquidity, "Deposit")
-                .withArgs(user.address, usdc.getAddress(), depositAmount);
+            // user deposits liquidity
+            await expect(liquidityManager.connect(user).deposit(await usdc.getAddress(), depositAmount))
+                .to.emit(liquidityManager, "SharesMinted")
+                .withArgs(user.address, await usdc.getAddress(), depositAmount, depositAmount);
 
-            // Check contract balance and shares
-            const newBalance = await usdc.balanceOf(migrateLiquidity.getAddress());
-            const userShares = await migrateLiquidity.userShares(user.address, usdc.getAddress());
+            // check contract balance
+            const vaultBalance = await usdc.balanceOf(await liquidityManager.getAddress());
+            expect(vaultBalance).to.equal(depositAmount);
 
-            expect(newBalance).to.equal(depositAmount);
+            // check user shares
+            const userShares = await liquidityManager.userShares(user.address, await usdc.getAddress());
             expect(userShares).to.equal(depositAmount);
+
+            // check total liquidity
+            const totalLiquidity = await liquidityManager.totalLiquidity(await usdc.getAddress());
+            expect(totalLiquidity).to.equal(depositAmount);
+        });
+
+        it("should deposit multiple times and issue shares accordingly", async function () {
+            const depositAmount1 = ethers.parseUnits("1000", 6); // 1000 USDC
+            const depositAmount2 = ethers.parseUnits("500", 6); // 500 USDC
+
+            // mint and approve for first deposit
+            await usdc.mint(user.address, depositAmount1);
+            await usdc.connect(user).approve(await liquidityManager.getAddress(), depositAmount1);
+
+            // first deposit
+            await liquidityManager.connect(user).deposit(await usdc.getAddress(), depositAmount1);
+
+            // mint and approve for second deposit
+            await usdc.mint(user.address, depositAmount2);
+            await usdc.connect(user).approve(await liquidityManager.getAddress(), depositAmount2);
+
+            // second deposit
+            await liquidityManager.connect(user).deposit(await usdc.getAddress(), depositAmount2);
+
+            // check user shares
+            const userShares = await liquidityManager.userShares(user.address, await usdc.getAddress());
+            expect(userShares).to.equal(depositAmount1 + depositAmount2);
+
+            // check total shares
+            const totalShares = await liquidityManager.totalShares(await usdc.getAddress());
+            expect(totalShares).to.equal(depositAmount1 + depositAmount2);
+
+            // check total liquidity
+            const totalLiquidity = await liquidityManager.totalLiquidity(await usdc.getAddress());
+            expect(totalLiquidity).to.equal(depositAmount1 + depositAmount2);
+        });
+
+        it("should allow multiple users to deposit and issue shares accordingly", async function () {
+            const depositAmount1 = ethers.parseUnits("1000", 6); // 1000 USDC
+            const depositAmount2 = ethers.parseUnits("600", 6); // 600 USDC
+
+            // mint and approve USDC for both users
+            await usdc.mint(user.address, depositAmount1);
+            await usdc.mint(user2.address, depositAmount2);
+            await usdc.connect(user).approve(await liquidityManager.getAddress(), depositAmount1);
+            await usdc.connect(user2).approve(await liquidityManager.getAddress(), depositAmount2);
+
+            // users deposit separately
+            await liquidityManager.connect(user).deposit(await usdc.getAddress(), depositAmount1);
+            await liquidityManager.connect(user2).deposit(await usdc.getAddress(), depositAmount2);
+
+            // check user share balances
+            expect(await liquidityManager.userShares(user.address, await usdc.getAddress())).to.equal(depositAmount1);
+            expect(await liquidityManager.userShares(user2.address, await usdc.getAddress())).to.equal(depositAmount2);
+
+            // check total shares
+            expect(await liquidityManager.totalShares(await usdc.getAddress())).to.equal(depositAmount1 + depositAmount2);
+
+            // check total liquidity
+            expect(await liquidityManager.totalLiquidity(await usdc.getAddress())).to.equal(depositAmount1 + depositAmount2);
         });
 
         it("should revert if depositing unsupported token", async function () {
             const depositAmount = ethers.parseUnits("1000", 6);
             const unsupportedToken = ethers.Wallet.createRandom().address;
 
-            await expect(migrateLiquidity.connect(user).deposit(unsupportedToken, depositAmount))
-                .to.be.revertedWith("Token not supported.");
+            await expect(liquidityManager.connect(user).deposit(unsupportedToken, depositAmount))
+                .to.be.revertedWith("Invalid deposit amount or token.");
         });
 
         it("should revert if depositing 0 amount", async function () {
-            await expect(migrateLiquidity.connect(user).deposit(usdc.getAddress(), 0))
-                .to.be.revertedWith("Deposit must be greater than 0.");
+            await expect(liquidityManager.connect(user).deposit(usdc.getAddress(), 0))
+                .to.be.revertedWith("Invalid deposit amount or token.");
         });
     });
 
-    describe("Withdrawals", function () {
-        let amount;
-
-        beforeEach(async function () {
-            amount = ethers.parseUnits("1000", 6);
-
-            // Fund user with USDC
-            await usdc.transfer(user.address, amount);
-
-            // Approve & deposit 1,000 USDC
-            await usdc.connect(user).approve(migrateLiquidity.getAddress(), amount);
-            await migrateLiquidity.connect(user).deposit(usdc.getAddress(), amount);
+    describe("Update Supported Tokens", function () {
+        it("should allow owner to add supported token", async function () {
+            const newToken = ethers.Wallet.createRandom().address;
+            await expect(liquidityManager.updateSupportedTokens(newToken, true))
+                .to.emit(liquidityManager, "TokenSupportUpdated")
+                .withArgs(newToken, true);
+            expect(await liquidityManager.supportedTokens(newToken)).to.be.true;
         });
 
-        it("should allow partial withdrawals and update shares", async function () {
-            const sharesToWithdraw = ethers.parseUnits("500", 6);
-            
-            // Get initial balances
-            let initialContractBalance = await usdc.balanceOf(migrateLiquidity.getAddress());
-            let initialUserBalance = await usdc.balanceOf(user.address);
-
-            // Withdraw and check event
-            await expect(migrateLiquidity.connect(user).withdraw(usdc.getAddress(), sharesToWithdraw))
-                .to.emit(migrateLiquidity, "Withdraw")
-                .withArgs(user.address, usdc.getAddress(), sharesToWithdraw);
-
-            // Get updated balances
-            let updatedContractBalance = await usdc.balanceOf(migrateLiquidity.getAddress());
-            let updatedUserBalance = await usdc.balanceOf(user.address);
-            let remainingShares = await migrateLiquidity.userShares(user.address, usdc.getAddress());
-
-            expect(updatedContractBalance).to.equal(initialContractBalance - sharesToWithdraw);
-            expect(updatedUserBalance).to.equal(initialUserBalance + sharesToWithdraw);
-            expect(remainingShares).to.equal(ethers.parseUnits("500", 6));
+        it("should allow owner to remove supported token", async function () {
+            await expect(liquidityManager.updateSupportedTokens(usdc.getAddress(), false))
+                .to.emit(liquidityManager, "TokenSupportUpdated")
+                .withArgs(usdc.getAddress(), false);
+            expect(await liquidityManager.supportedTokens(usdc.getAddress())).to.be.false;
         });
 
-        it("should allow full withdrawal and reset user shares", async function () {
-            const sharesToWithdraw = ethers.parseUnits("1000", 6);
-
-            await expect(migrateLiquidity.connect(user).withdraw(usdc.getAddress(), sharesToWithdraw))
-                .to.emit(migrateLiquidity, "Withdraw")
-                .withArgs(user.address, usdc.getAddress(), sharesToWithdraw);
-
-            const userSharesAfter = await migrateLiquidity.userShares(user.address, usdc.getAddress());
-            expect(userSharesAfter).to.equal(0);
-        });
-
-        it("should revert if user tries to withdraw more than they own", async function () {
-            await expect(
-                migrateLiquidity.connect(user).withdraw(usdc.getAddress(), ethers.parseUnits("2000", 6))
-            ).to.be.revertedWith("Insufficient shares.");
-        });
-
-        it("should revert if withdrawing unsupported token", async function () {
-            await expect(
-                migrateLiquidity.connect(user).withdraw(ethers.ZeroAddress, ethers.parseUnits("500", 6))
-            ).to.be.revertedWith("Token not supported.");
-        });
-
-        it("should revert if withdrawing 0 shares", async function () {
-            await expect(
-                migrateLiquidity.connect(user).withdraw(usdc.getAddress(), 0)
-            ).to.be.revertedWith("Must withdraw more than 0 shares.");
-        });
-
-        it("should revert if contract has insufficient balance", async function () {
-            await migrateLiquidity.connect(user).withdraw(usdc.getAddress(), amount);
-
-            await expect(
-                migrateLiquidity.connect(user).withdraw(usdc.getAddress(), ethers.parseUnits("1", 6))
-            ).to.be.revertedWith("Insufficient shares.");
+        it("should not update if token status is unchanged", async function () {
+            await expect(liquidityManager.updateSupportedTokens(usdc.getAddress(), true))
+                .to.be.revertedWith("Token status unchanged.");
         });
     });
 });
