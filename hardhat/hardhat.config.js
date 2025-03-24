@@ -7,7 +7,12 @@ const privateKey = process.env.PRIVATE_KEY || "";
 module.exports = {
   solidity: "0.8.28",
   networks: {
-    hardhat: {},
+    hardhat: {
+      forking: {
+        url: `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+        chainId: 8453,
+      },
+    },
     baseSepolia: {
       url: `https://base-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
       accounts: [privateKey],
