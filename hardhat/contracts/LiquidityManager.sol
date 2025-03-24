@@ -12,8 +12,6 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
 
     mapping(address => bool) public supportedTokens;
     mapping(address => bool) public supportedPools;
-    mapping(address => uint256) public poolBalances;
-    mapping(address => address) public poolRewardTokens;
 
     mapping(address => mapping(address => uint256)) public userShares;
     mapping(address => uint256) public totalShares;
@@ -21,6 +19,7 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
 
     event SharesMinted(address indexed user, address indexed token, uint256 amount, uint256 shares);
     event TokenSupportUpdated(address indexed token, bool status);
+    event PoolSupportUpdated(address indexed pool, bool status);
 
     constructor() Ownable(msg.sender) {}
 
@@ -47,6 +46,7 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
         emit SharesMinted(msg.sender, _token, _amount, sharesToMint);
     }
 
+
     /**
      * @dev Allows the owner to add or remove supported tokens.
      * @param _token The token address.
@@ -57,5 +57,18 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
 
         supportedTokens[_token] = _status;
         emit TokenSupportUpdated(_token, _status);
+    }
+
+    /**
+     * @dev Allows the owner to add or remove supported pools.
+     * @param _pool The pool address.
+     * @param _status True to support the pool, false to remove support.
+     */
+    function updateSupportedPools(address _pool, bool _status) external onlyOwner() {
+        require(supportedPools[_pool] != _status, "Pool status unchanged.");
+        require(_pool != address(0), "Invalid pool address.");
+
+        supportedPools[_pool] = _status;
+        emit PoolSupportUpdated(_pool, _status);
     }
 }
