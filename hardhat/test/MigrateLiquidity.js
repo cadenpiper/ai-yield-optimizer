@@ -147,4 +147,26 @@ describe("MigrateLiquidity", function () {
                 .to.be.revertedWith("Token status unchanged.");
         });
     });
+
+    describe("Update Supported Pools", function () {
+        it("should allow owner to add and remove supported pool", async function () {
+            const newPool = ethers.Wallet.createRandom().address;
+
+            // Add support for pool
+            await expect(liquidityManager.updateSupportedPools(newPool, true))
+                .to.emit(liquidityManager, "PoolSupportUpdated")
+                .withArgs(newPool, true);
+            expect(await liquidityManager.supportedPools(newPool)).to.be.true;
+
+            // Remove support for pool
+            await expect(liquidityManager.updateSupportedPools(newPool, false))
+                .to.emit(liquidityManager, "PoolSupportUpdated")
+                .withArgs(newPool, false);
+            expect(await liquidityManager.supportedPools(newPool)).to.be.false;
+
+            // Ensure the transaction reverts if status is the same
+            await expect(liquidityManager.updateSupportedPools(newPool, false))
+                .to.be.revertedWith("Pool status unchanged.");
+        });
+    })
 });
