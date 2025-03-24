@@ -71,4 +71,18 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
         supportedPools[_pool] = _status;
         emit PoolSupportUpdated(_pool, _status);
     }
+
+    /**
+     * @dev Supplies liquidity to supported Aave lending pool
+     * @param _token The token address.
+     * @param _pool The pool address.
+     * @param _amount Amount being supplied to Aave
+     */
+    function supplyToAave(address _token, address _pool, uint256 _amount) external {
+        require(supportedTokens[_token] && supportedPools[_pool], "Token and/or pool not supported.");
+
+        IERC20(_token).approve(_pool, _amount);
+
+        IPool(_pool).supply(_token, _amount, address(this), 0);
+    }
 }
