@@ -18,6 +18,7 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
     mapping(address => uint256) public totalLiquidity;
 
     event SharesMinted(address indexed user, address indexed token, uint256 amount, uint256 shares);
+    event SharesBurned(address indexed user, address indexed token, uint256 amount, uint256 shares);
     event TokenSupportUpdated(address indexed token, bool status);
     event PoolSupportUpdated(address indexed pool, bool status);
 
@@ -84,5 +85,47 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
         IERC20(_token).approve(_pool, _amount);
 
         IPool(_pool).supply(_token, _amount, address(this), 0);
+    }
+
+    /**
+     * @dev Allows users to withdraw supported ERC20 tokens.
+     * @param _token The token address.
+     * @param _pool The pool address.
+     * @param _shares Amount of shares user wants to withdraw.
+     */
+    function withdrawFromAave(address _token, address _pool, uint256 _shares) external nonReentrant {
+        require(supportedTokens[_token] && supportedPools[_pool], "Token and/or pool not supported.");
+        require(_shares > 0 && userShares[msg.sender][_token] >= _shares, "Invalid share amount.");
+
+        // Calculate amount to withdraw based on shares
+        uint256 totalSharesToken = totalShares[_token];
+        uint256 totalLiquidityToken = totalLiquidity[_token];
+        uint256 amountToWithdraw = (_shares * totalLiquidityToken) / totalSharesToken;
+
+        // Fetch the aToken address dynamically from pool
+        DataTypes.ReserveData memory reserveData = IPool(_pool).getReserveData(_token);
+        address aToken = reserveData.aTokenAddress;
+        require(aToken != address(0), "Invalid aToken address from pool.");
+
+        // Check aToken balance
+        uint256 aTokenBalance = IERC20(aToken).balanceOf(address(this));
+        require(aTokenBalance >= amountToWithdraw, "Insufficient aToken balance in contract.");
+
+        // Approve Aave pool to spend tokens
+        IERC20(aToken).forceApprove(_pool, amountToWithdraw);
+
+        // Withdraw from Aave
+        uint256 withdrawnAmount = IPool(_pool).withdraw(_token, amountToWithdraw, address(this));
+        require(withdrawnAmount > 0, "Withdrawal from Aave failed.");
+
+        // Update shares and liquidity
+        userShares[msg.sender][_token] -= _shares;
+        totalShares[_token] -= _shares;
+        totalLiquidity[_token] -= withdrawnAmount;
+
+        // Transfer withdrawn tokens to user
+        IERC20(_token).safeTransfer(msg.sender, withdrawnAmount);
+
+        emit SharesBurned(msg.sender, _token, withdrawnAmount, _shares);
     }
 }

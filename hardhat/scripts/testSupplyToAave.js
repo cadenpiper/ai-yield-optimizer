@@ -42,6 +42,16 @@ async function main() {
     // Supply to Aave via LiquidityManager.sol
     await liquidityManager.supplyToAave(USDC_ADDRESS, AAVE_POOL_ADDRESS, amount);
     console.log("Supplied USDC to Aave via LiquidityManager.sol\n");
+
+    // Calculate user shares
+    const userShares = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
+    console.log(`Impersonated Signer shares: ${ethers.formatUnits(userShares, 6)}\n`);
+
+    // Withdraw shares from Aave via LiquidityManager.sol
+    await liquidityManager.connect(impersonatedSigner).withdrawFromAave(USDC_ADDRESS, AAVE_POOL_ADDRESS, userShares);
+    const userSharesAfter = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
+    console.log(`Impersonated Signer shares after: ${ethers.formatUnits(userSharesAfter, 6)}\n`);
+    console.log("Withdrew shares from Aave via LiquidityManager.sol");
 }
 
 main()
