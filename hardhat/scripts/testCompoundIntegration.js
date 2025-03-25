@@ -48,7 +48,10 @@ async function main() {
     console.log(`Impersonated Signer shares: ${ethers.formatUnits(userShares, 6)}`);
 
     // Withdraw from Compound via LiquidityManager.sol
-    
+    await liquidityManager.connect(impersonatedSigner).withdrawFromCompound(USDC_ADDRESS, COMET_MARKET_ADDRESS, userShares);
+    const userSharesAfter = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
+    console.log(`Impersonated Signer shares after: ${ethers.formatUnits(userSharesAfter, 6)}\n`);
+    console.log("Withdrew from Compound via LiquidityManager.sol\n");
 }
 
 main()
