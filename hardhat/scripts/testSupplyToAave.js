@@ -27,7 +27,7 @@ async function main() {
 
     // Set supported token and pool
     await liquidityManager.updateSupportedTokens(USDC_ADDRESS, true);
-    await liquidityManager.updateSupportedPools(AAVE_POOL_ADDRESS, true);
+    await liquidityManager.updateSupportedAavePools(AAVE_POOL_ADDRESS, true);
     console.log('USDC and AAVE pool supported.');
 
     // Approve contract to spend USDC
@@ -45,13 +45,13 @@ async function main() {
 
     // Calculate user shares
     const userShares = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
-    console.log(`Impersonated Signer shares: ${ethers.formatUnits(userShares, 6)}\n`);
+    console.log(`Impersonated Signer shares: ${ethers.formatUnits(userShares, 6)}`);
 
     // Withdraw shares from Aave via LiquidityManager.sol
     await liquidityManager.connect(impersonatedSigner).withdrawFromAave(USDC_ADDRESS, AAVE_POOL_ADDRESS, userShares);
     const userSharesAfter = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
     console.log(`Impersonated Signer shares after: ${ethers.formatUnits(userSharesAfter, 6)}\n`);
-    console.log("Withdrew shares from Aave via LiquidityManager.sol");
+    console.log("Withdrew shares from Aave via LiquidityManager.sol\n");
 }
 
 main()

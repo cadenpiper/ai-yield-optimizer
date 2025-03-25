@@ -7,11 +7,17 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@aave/core-v3/contracts/interfaces/IPool.sol";
 
+interface IComet {
+    function supply(address asset, uint amount) external;
+    function withdraw(address asset, uint amount) external;
+}
+
 contract LiquidityManager is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     mapping(address => bool) public supportedTokens;
-    mapping(address => bool) public supportedPools;
+    mapping(address => bool) public supportedAavePools;
+    mapping(address => bool) public supportedCometMarkets;
 
     mapping(address => mapping(address => uint256)) public userShares;
     mapping(address => uint256) public totalShares;
@@ -20,7 +26,8 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
     event SharesMinted(address indexed user, address indexed token, uint256 amount, uint256 shares);
     event SharesBurned(address indexed user, address indexed token, uint256 amount, uint256 shares);
     event TokenSupportUpdated(address indexed token, bool status);
-    event PoolSupportUpdated(address indexed pool, bool status);
+    event AavePoolSupportUpdated(address indexed pool, bool status);
+    event CometMarketSupportUpdated(address indexed market, bool status);
 
     constructor() Ownable(msg.sender) {}
 
@@ -65,12 +72,25 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
      * @param _pool The pool address.
      * @param _status True to support the pool, false to remove support.
      */
-    function updateSupportedPools(address _pool, bool _status) external onlyOwner() {
-        require(supportedPools[_pool] != _status, "Pool status unchanged.");
+    function updateSupportedAavePools(address _pool, bool _status) external onlyOwner {
+        require(supportedAavePools[_pool] != _status, "Pool status unchanged.");
         require(_pool != address(0), "Invalid pool address.");
 
-        supportedPools[_pool] = _status;
-        emit PoolSupportUpdated(_pool, _status);
+        supportedAavePools[_pool] = _status;
+        emit AavePoolSupportUpdated(_pool, _status);
+    }
+
+    /**
+     * @dev Allows the owner to add or remove supported markets.
+     * @param _market The market address.
+     * @param _status True to support the market, false to remove support.
+     */
+    function updateSupportedCometMarket(address _market, bool _status) external onlyOwner {
+        require(supportedCometMarkets[_market] != _status, "Market status unchanged.");
+        require(_market != address(0), "Invalid market address.");
+
+        supportedCometMarkets[_market] = _status;
+        emit CometMarketSupportUpdated(_market, _status);
     }
 
     /**
@@ -80,7 +100,7 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
      * @param _amount Amount being supplied to Aave
      */
     function supplyToAave(address _token, address _pool, uint256 _amount) external {
-        require(supportedTokens[_token] && supportedPools[_pool], "Token and/or pool not supported.");
+        require(supportedTokens[_token] && supportedAavePools[_pool], "Token and/or pool not supported.");
 
         IERC20(_token).approve(_pool, _amount);
 
@@ -94,36 +114,29 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
      * @param _shares Amount of shares user wants to withdraw.
      */
     function withdrawFromAave(address _token, address _pool, uint256 _shares) external nonReentrant {
-        require(supportedTokens[_token] && supportedPools[_pool], "Token and/or pool not supported.");
+        require(supportedTokens[_token] && supportedAavePools[_pool], "Token and/or pool not supported.");
         require(_shares > 0 && userShares[msg.sender][_token] >= _shares, "Invalid share amount.");
 
-        // Calculate amount to withdraw based on shares
         uint256 totalSharesToken = totalShares[_token];
         uint256 totalLiquidityToken = totalLiquidity[_token];
         uint256 amountToWithdraw = (_shares * totalLiquidityToken) / totalSharesToken;
 
-        // Fetch the aToken address dynamically from pool
         DataTypes.ReserveData memory reserveData = IPool(_pool).getReserveData(_token);
         address aToken = reserveData.aTokenAddress;
         require(aToken != address(0), "Invalid aToken address from pool.");
 
-        // Check aToken balance
         uint256 aTokenBalance = IERC20(aToken).balanceOf(address(this));
         require(aTokenBalance >= amountToWithdraw, "Insufficient aToken balance in contract.");
 
-        // Approve Aave pool to spend tokens
         IERC20(aToken).forceApprove(_pool, amountToWithdraw);
 
-        // Withdraw from Aave
         uint256 withdrawnAmount = IPool(_pool).withdraw(_token, amountToWithdraw, address(this));
         require(withdrawnAmount > 0, "Withdrawal from Aave failed.");
 
-        // Update shares and liquidity
         userShares[msg.sender][_token] -= _shares;
         totalShares[_token] -= _shares;
         totalLiquidity[_token] -= withdrawnAmount;
 
-        // Transfer withdrawn tokens to user
         IERC20(_token).safeTransfer(msg.sender, withdrawnAmount);
 
         emit SharesBurned(msg.sender, _token, withdrawnAmount, _shares);
