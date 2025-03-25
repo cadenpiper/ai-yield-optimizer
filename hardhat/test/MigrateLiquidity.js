@@ -175,19 +175,19 @@ describe("MigrateLiquidity", function () {
             const newMarket = ethers.Wallet.createRandom().address;
 
             // Add support for market
-            await expect(liquidityManager.updateSupportedCometMarket(newMarket, true))
+            await expect(liquidityManager.updateSupportedCometMarkets(newMarket, true))
                 .to.emit(liquidityManager, "CometMarketSupportUpdated")
                 .withArgs(newMarket, true);
             expect(await liquidityManager.supportedCometMarkets(newMarket)).to.be.true;
 
             // Remove support for market
-            await expect(liquidityManager.updateSupportedCometMarket(newMarket, false))
+            await expect(liquidityManager.updateSupportedCometMarkets(newMarket, false))
                 .to.emit(liquidityManager, "CometMarketSupportUpdated")
                 .withArgs(newMarket, false);
             expect(await liquidityManager.supportedCometMarkets(newMarket)).to.be.false;
 
             // Ensure the transaction reverts if status is the same
-            await expect(liquidityManager.updateSupportedCometMarket(newMarket, false))
+            await expect(liquidityManager.updateSupportedCometMarkets(newMarket, false))
                 .to.be.revertedWith("Market status unchanged.");
         });
     })

@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 
 const USDC_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
-const AAVE_POOL_ADDRESS = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
+const COMET_MARKET_ADDRESS = '0xc3d688B66703497DAA19211EEdff47f25384cdc3';
 
 async function main() {
     // Impersonate Eth mainnet USDC whale
@@ -27,8 +27,8 @@ async function main() {
 
     // Set supported token and pool
     await liquidityManager.updateSupportedTokens(USDC_ADDRESS, true);
-    await liquidityManager.updateSupportedAavePools(AAVE_POOL_ADDRESS, true);
-    console.log('USDC and AAVE pool supported.');
+    await liquidityManager.updateSupportedCometMarkets(COMET_MARKET_ADDRESS, true);
+    console.log('USDC and Comet market supported.');
 
     // Approve contract to spend USDC
     const amount = ethers.parseUnits("1000", 6);
@@ -39,19 +39,19 @@ async function main() {
     await liquidityManager.connect(impersonatedSigner).deposit(USDC_ADDRESS, amount);
     console.log("Deposited USDC into LiquidityManager.sol");
 
-    // Supply to Aave via LiquidityManager.sol
-    await liquidityManager.supplyToAave(USDC_ADDRESS, AAVE_POOL_ADDRESS, amount);
-    console.log("Supplied USDC to Aave via LiquidityManager.sol\n");
+    // Supply to Compound via LiquidityManager.sol
+    await liquidityManager.supplyToCompound(USDC_ADDRESS, COMET_MARKET_ADDRESS, amount);
+    console.log("Supplied USDC to Compound via LiquidityManager.sol\n");
 
     // Calculate user shares
     const userShares = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
     console.log(`Impersonated Signer shares: ${ethers.formatUnits(userShares, 6)}`);
 
-    // Withdraw shares from Aave via LiquidityManager.sol
-    await liquidityManager.connect(impersonatedSigner).withdrawFromAave(USDC_ADDRESS, AAVE_POOL_ADDRESS, userShares);
+    // Withdraw from Compound via LiquidityManager.sol
+    await liquidityManager.connect(impersonatedSigner).withdrawFromCompound(USDC_ADDRESS, COMET_MARKET_ADDRESS, userShares);
     const userSharesAfter = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
     console.log(`Impersonated Signer shares after: ${ethers.formatUnits(userSharesAfter, 6)}\n`);
-    console.log("Withdrew shares from Aave via LiquidityManager.sol\n");
+    console.log("Withdrew from Compound via LiquidityManager.sol\n");
 }
 
 main()

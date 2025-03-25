@@ -85,7 +85,7 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
      * @param _market The market address.
      * @param _status True to support the market, false to remove support.
      */
-    function updateSupportedCometMarket(address _market, bool _status) external onlyOwner {
+    function updateSupportedCometMarkets(address _market, bool _status) external onlyOwner {
         require(supportedCometMarkets[_market] != _status, "Market status unchanged.");
         require(_market != address(0), "Invalid market address.");
 
@@ -99,12 +99,26 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
      * @param _pool The pool address.
      * @param _amount Amount being supplied to Aave
      */
-    function supplyToAave(address _token, address _pool, uint256 _amount) external {
+    function supplyToAave(address _token, address _pool, uint256 _amount) external nonReentrant {
         require(supportedTokens[_token] && supportedAavePools[_pool], "Token and/or pool not supported.");
 
         IERC20(_token).approve(_pool, _amount);
 
         IPool(_pool).supply(_token, _amount, address(this), 0);
+    }
+
+    /**
+     * @dev Supplies liquidity to supported Comet market
+     * @param _token The token address.
+     * @param _market The market address.
+     * @param _amount Amount being supplied to Comet
+     */
+    function supplyToCompound(address _token, address _market, uint256 _amount) external nonReentrant {
+        require(supportedTokens[_token] && supportedCometMarkets[_market], "Token and/or market not supported.");
+
+        IERC20(_token).forceApprove(_market, _amount);
+
+        IComet(_market).supply(_token, _amount);
     }
 
     /**
@@ -140,5 +154,30 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
         IERC20(_token).safeTransfer(msg.sender, withdrawnAmount);
 
         emit SharesBurned(msg.sender, _token, withdrawnAmount, _shares);
+    }
+
+    /**
+     * @dev Allows users to withdraw supported ERC20 tokens.
+     * @param _token The token address.
+     * @param _market The market address.
+     * @param _shares Amount of shares user wants to withdraw.
+     */
+    function withdrawFromCompound(address _token, address _market, uint256 _shares) external nonReentrant {
+        require(supportedTokens[_token] && supportedCometMarkets[_market], "Token and/or market not supported.");
+        require(_shares > 0 && userShares[msg.sender][_token] >= _shares, "Invalid share amount");
+
+        uint256 totalSharesToken = totalShares[_token];
+        uint256 totalLiquidityToken = totalLiquidity[_token];
+        uint256 amountToWithdraw = (_shares * totalLiquidityToken) / totalSharesToken;
+
+        IComet(_market).withdraw(_token, amountToWithdraw);
+
+        userShares[msg.sender][_token] -= _shares;
+        totalShares[_token] -= _shares;
+        totalLiquidity[_token] -= amountToWithdraw;
+
+        IERC20(_token).safeTransfer(msg.sender, amountToWithdraw);
+
+        emit SharesBurned(msg.sender, _token, amountToWithdraw, _shares);
     }
 }
