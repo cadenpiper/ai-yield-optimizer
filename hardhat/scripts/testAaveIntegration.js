@@ -47,11 +47,11 @@ async function main() {
     const userShares = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
     console.log(`Impersonated Signer shares: ${ethers.formatUnits(userShares, 6)}`);
 
-    // Withdraw shares from Aave via LiquidityManager.sol
+    // Withdraw from Aave via LiquidityManager.sol
     await liquidityManager.connect(impersonatedSigner).withdrawFromAave(USDC_ADDRESS, AAVE_POOL_ADDRESS, userShares);
     const userSharesAfter = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
     console.log(`Impersonated Signer shares after: ${ethers.formatUnits(userSharesAfter, 6)}\n`);
-    console.log("Withdrew shares from Aave via LiquidityManager.sol\n");
+    console.log("Withdrew from Aave via LiquidityManager.sol\n");
 }
 
 main()

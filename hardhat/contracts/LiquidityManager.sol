@@ -85,7 +85,7 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
      * @param _market The market address.
      * @param _status True to support the market, false to remove support.
      */
-    function updateSupportedCometMarket(address _market, bool _status) external onlyOwner {
+    function updateSupportedCometMarkets(address _market, bool _status) external onlyOwner {
         require(supportedCometMarkets[_market] != _status, "Market status unchanged.");
         require(_market != address(0), "Invalid market address.");
 
@@ -105,6 +105,20 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
         IERC20(_token).approve(_pool, _amount);
 
         IPool(_pool).supply(_token, _amount, address(this), 0);
+    }
+
+    /**
+     * @dev Supplies liquidity to supported Comet market
+     * @param _token The token address.
+     * @param _market The market address.
+     * @param _amount Amount being supplied to Comet
+     */
+    function supplyToCompound(address _token, address _market, uint256 _amount) external nonReentrant {
+        require(supportedTokens[_token] && supportedCometMarkets[_market], "Token and/or market not supported.");
+
+        IERC20(_token).forceApprove(_market, _amount);
+
+        IComet(_market).supply(_token, _amount);
     }
 
     /**
