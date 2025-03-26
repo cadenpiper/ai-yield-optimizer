@@ -60,9 +60,9 @@ async function runTest(protocol) {
 
   // Withdraw from pool
   if (protocol === "compound") {
-    await liquidityManager.connect(impersonatedSigner).withdrawFromCompound(USDC_ADDRESS, COMET_MARKET_ADDRESS, userShares);
+    await liquidityManager.connect(impersonatedSigner).withdraw(USDC_ADDRESS, COMET_MARKET_ADDRESS, userShares, marketType);
   } else {
-    await liquidityManager.connect(impersonatedSigner).withdrawFromAave(USDC_ADDRESS, AAVE_POOL_ADDRESS, userShares);
+    await liquidityManager.connect(impersonatedSigner).withdraw(USDC_ADDRESS, AAVE_POOL_ADDRESS, userShares, marketType);
   }
 
   const userSharesAfter = await liquidityManager.userShares(impersonatedSigner.address, USDC_ADDRESS);
