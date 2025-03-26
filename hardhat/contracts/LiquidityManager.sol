@@ -23,110 +23,75 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
     mapping(address => uint256) public totalShares;
     mapping(address => uint256) public totalLiquidity;
 
+    enum Protocol { Aave, Compound }
+
     event SharesMinted(address indexed user, address indexed token, uint256 amount, uint256 shares);
     event SharesBurned(address indexed user, address indexed token, uint256 amount, uint256 shares);
+    event Supplied(address indexed token, address indexed destination, uint256 amount, Protocol protocol);
     event TokenSupportUpdated(address indexed token, bool status);
     event AavePoolSupportUpdated(address indexed pool, bool status);
     event CometMarketSupportUpdated(address indexed market, bool status);
 
+    error InvalidTokenOrAmount();
+    error InvalidDestination();
+    error UnsupportedProtocol();
+
     constructor() Ownable(msg.sender) {}
 
-    /**
-     * @dev Allows users to deposit supported ERC20 tokens.
-     * @param _token The token address.
-     * @param _amount The amount to deposit.
-     */
     function deposit(address _token, uint256 _amount) external nonReentrant {
-        require(_amount > 0 && supportedTokens[_token], "Invalid deposit amount or token.");
+        if (!supportedTokens[_token] || _amount == 0) revert InvalidTokenOrAmount();
 
-        uint256 vaultLiquidity = totalLiquidity[_token];
+        uint256 shares = totalLiquidity[_token] == 0 
+            ? _amount 
+            : (_amount * totalShares[_token]) / totalLiquidity[_token];
 
-        uint256 sharesToMint = (totalShares[_token] == 0)
-            ? _amount
-            : (_amount * totalShares[_token]) / vaultLiquidity;
+        userShares[msg.sender][_token] += shares;
+        totalShares[_token] += shares;
+        totalLiquidity[_token] += _amount;
 
         IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
 
-        userShares[msg.sender][_token] += sharesToMint;
-        totalShares[_token] += sharesToMint;
-        totalLiquidity[_token] += _amount;
-
-        emit SharesMinted(msg.sender, _token, _amount, sharesToMint);
+        emit SharesMinted(msg.sender, _token, _amount, shares);
     }
 
+    function supply(address _token, address _destination, uint256 _amount, Protocol _protocol) external nonReentrant {
+        if (!supportedTokens[_token] || _amount == 0) revert InvalidTokenOrAmount();
+        
+        if (_protocol == Protocol.Aave) {
+            if (!supportedAavePools[_destination]) revert InvalidDestination();
+            IERC20(_token).forceApprove(_destination, _amount);
+            IPool(_destination).supply(_token, _amount, address(this), 0);
+        } else if (_protocol == Protocol.Compound) {
+            if (!supportedCometMarkets[_destination]) revert InvalidDestination();
+            IERC20(_token).forceApprove(_destination, _amount);
+            IComet(_destination).supply(_token, _amount);
+        } else {
+            revert UnsupportedProtocol();
+        }
 
-    /**
-     * @dev Allows the owner to add or remove supported tokens.
-     * @param _token The token address.
-     * @param _status True to support the token, false to remove support.
-     */
+        emit Supplied(_token, _destination, _amount, _protocol);
+    }
+
     function updateSupportedTokens(address _token, bool _status) external onlyOwner {
         require(supportedTokens[_token] != _status, "Token status unchanged.");
-
         supportedTokens[_token] = _status;
         emit TokenSupportUpdated(_token, _status);
     }
 
-    /**
-     * @dev Allows the owner to add or remove supported pools.
-     * @param _pool The pool address.
-     * @param _status True to support the pool, false to remove support.
-     */
     function updateSupportedAavePools(address _pool, bool _status) external onlyOwner {
         require(supportedAavePools[_pool] != _status, "Pool status unchanged.");
         require(_pool != address(0), "Invalid pool address.");
-
         supportedAavePools[_pool] = _status;
         emit AavePoolSupportUpdated(_pool, _status);
     }
 
-    /**
-     * @dev Allows the owner to add or remove supported markets.
-     * @param _market The market address.
-     * @param _status True to support the market, false to remove support.
-     */
     function updateSupportedCometMarkets(address _market, bool _status) external onlyOwner {
         require(supportedCometMarkets[_market] != _status, "Market status unchanged.");
         require(_market != address(0), "Invalid market address.");
-
         supportedCometMarkets[_market] = _status;
         emit CometMarketSupportUpdated(_market, _status);
     }
 
-    /**
-     * @dev Supplies liquidity to supported Aave lending pool
-     * @param _token The token address.
-     * @param _pool The pool address.
-     * @param _amount Amount being supplied to Aave
-     */
-    function supplyToAave(address _token, address _pool, uint256 _amount) external nonReentrant {
-        require(supportedTokens[_token] && supportedAavePools[_pool], "Token and/or pool not supported.");
-
-        IERC20(_token).approve(_pool, _amount);
-
-        IPool(_pool).supply(_token, _amount, address(this), 0);
-    }
-
-    /**
-     * @dev Supplies liquidity to supported Comet market
-     * @param _token The token address.
-     * @param _market The market address.
-     * @param _amount Amount being supplied to Comet
-     */
-    function supplyToCompound(address _token, address _market, uint256 _amount) external nonReentrant {
-        require(supportedTokens[_token] && supportedCometMarkets[_market], "Token and/or market not supported.");
-
-        IERC20(_token).forceApprove(_market, _amount);
-
-        IComet(_market).supply(_token, _amount);
-    }
-
-    /**
-     * @dev Allows users to withdraw supported ERC20 tokens.
-     * @param _token The token address.
-     * @param _pool The pool address.
-     * @param _shares Amount of shares user wants to withdraw.
-     */
     function withdrawFromAave(address _token, address _pool, uint256 _shares) external nonReentrant {
         require(supportedTokens[_token] && supportedAavePools[_pool], "Token and/or pool not supported.");
         require(_shares > 0 && userShares[msg.sender][_token] >= _shares, "Invalid share amount.");
@@ -137,15 +102,15 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
 
         DataTypes.ReserveData memory reserveData = IPool(_pool).getReserveData(_token);
         address aToken = reserveData.aTokenAddress;
-        require(aToken != address(0), "Invalid aToken address from pool.");
+        require(aToken != address(0), "Invalid aToken address.");
 
         uint256 aTokenBalance = IERC20(aToken).balanceOf(address(this));
-        require(aTokenBalance >= amountToWithdraw, "Insufficient aToken balance in contract.");
+        require(aTokenBalance >= amountToWithdraw, "Insufficient aToken balance.");
 
         IERC20(aToken).forceApprove(_pool, amountToWithdraw);
 
         uint256 withdrawnAmount = IPool(_pool).withdraw(_token, amountToWithdraw, address(this));
-        require(withdrawnAmount > 0, "Withdrawal from Aave failed.");
+        require(withdrawnAmount > 0, "Aave withdrawal failed.");
 
         userShares[msg.sender][_token] -= _shares;
         totalShares[_token] -= _shares;
@@ -156,15 +121,9 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
         emit SharesBurned(msg.sender, _token, withdrawnAmount, _shares);
     }
 
-    /**
-     * @dev Allows users to withdraw supported ERC20 tokens.
-     * @param _token The token address.
-     * @param _market The market address.
-     * @param _shares Amount of shares user wants to withdraw.
-     */
     function withdrawFromCompound(address _token, address _market, uint256 _shares) external nonReentrant {
         require(supportedTokens[_token] && supportedCometMarkets[_market], "Token and/or market not supported.");
-        require(_shares > 0 && userShares[msg.sender][_token] >= _shares, "Invalid share amount");
+        require(_shares > 0 && userShares[msg.sender][_token] >= _shares, "Invalid share amount.");
 
         uint256 totalSharesToken = totalShares[_token];
         uint256 totalLiquidityToken = totalLiquidity[_token];

@@ -117,12 +117,12 @@ describe("MigrateLiquidity", function () {
             const unsupportedToken = ethers.Wallet.createRandom().address;
 
             await expect(liquidityManager.connect(user).deposit(unsupportedToken, depositAmount))
-                .to.be.revertedWith("Invalid deposit amount or token.");
+                .to.be.revertedWithCustomError(liquidityManager, "InvalidTokenOrAmount");
         });
 
         it("should revert if depositing 0 amount", async function () {
             await expect(liquidityManager.connect(user).deposit(usdc.getAddress(), 0))
-                .to.be.revertedWith("Invalid deposit amount or token.");
+                .to.be.revertedWithCustomError(liquidityManager, "InvalidTokenOrAmount");
         });
     });
 
