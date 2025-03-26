@@ -16,9 +16,7 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     mapping(address => bool) public supportedTokens;
-    mapping(address => bool) public supportedAavePools;
-    mapping(address => bool) public supportedCometMarkets;
-
+    mapping(address => bool) public supportedMarkets;
     mapping(address => mapping(address => uint256)) public userShares;
     mapping(address => uint256) public totalShares;
     mapping(address => uint256) public totalLiquidity;
@@ -29,12 +27,16 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
     event SharesBurned(address indexed user, address indexed token, uint256 amount, uint256 shares);
     event Supplied(address indexed token, address indexed destination, uint256 amount, Protocol protocol);
     event TokenSupportUpdated(address indexed token, bool status);
-    event AavePoolSupportUpdated(address indexed pool, bool status);
-    event CometMarketSupportUpdated(address indexed market, bool status);
+    event MarketSupportUpdated(address indexed market, bool status);
 
     error InvalidTokenOrAmount();
     error InvalidDestination();
     error UnsupportedProtocol();
+    error InsufficientShares();
+    error WithdrawalFailed();
+    error TokenSupportUnchanged();
+    error MarketSupportUnchanged();
+    error InvalidAddress();
 
     constructor() Ownable(msg.sender) {}
 
@@ -58,11 +60,11 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
         if (!supportedTokens[_token] || _amount == 0) revert InvalidTokenOrAmount();
         
         if (_protocol == Protocol.Aave) {
-            if (!supportedAavePools[_destination]) revert InvalidDestination();
+            if (!supportedMarkets[_destination]) revert InvalidDestination();
             IERC20(_token).forceApprove(_destination, _amount);
             IPool(_destination).supply(_token, _amount, address(this), 0);
         } else if (_protocol == Protocol.Compound) {
-            if (!supportedCometMarkets[_destination]) revert InvalidDestination();
+            if (!supportedMarkets[_destination]) revert InvalidDestination();
             IERC20(_token).forceApprove(_destination, _amount);
             IComet(_destination).supply(_token, _amount);
         } else {
@@ -72,45 +74,36 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
         emit Supplied(_token, _destination, _amount, _protocol);
     }
 
-    function updateSupportedTokens(address _token, bool _status) external onlyOwner {
-        require(supportedTokens[_token] != _status, "Token status unchanged.");
-        supportedTokens[_token] = _status;
-        emit TokenSupportUpdated(_token, _status);
-    }
+    function withdraw(address _token, address _destination, uint256 _shares, Protocol _protocol) external nonReentrant {
+        if (!supportedTokens[_token] || _shares == 0) revert InvalidTokenOrAmount();
+        if (userShares[msg.sender][_token] < _shares) revert InsufficientShares();
 
-    function updateSupportedAavePools(address _pool, bool _status) external onlyOwner {
-        require(supportedAavePools[_pool] != _status, "Pool status unchanged.");
-        require(_pool != address(0), "Invalid pool address.");
-        supportedAavePools[_pool] = _status;
-        emit AavePoolSupportUpdated(_pool, _status);
-    }
+        bool isAave = _protocol == Protocol.Aave;
+        bool isCompound = _protocol == Protocol.Compound;
+        if (isAave && !supportedMarkets[_destination]) revert InvalidDestination();
+        if (isCompound && !supportedMarkets[_destination]) revert InvalidDestination();
+        if (!isAave && !isCompound) revert UnsupportedProtocol();
 
-    function updateSupportedCometMarkets(address _market, bool _status) external onlyOwner {
-        require(supportedCometMarkets[_market] != _status, "Market status unchanged.");
-        require(_market != address(0), "Invalid market address.");
-        supportedCometMarkets[_market] = _status;
-        emit CometMarketSupportUpdated(_market, _status);
-    }
+        uint256 amountToWithdraw = (_shares * totalLiquidity[_token]) / totalShares[_token];
+        uint256 withdrawnAmount;
 
-    function withdrawFromAave(address _token, address _pool, uint256 _shares) external nonReentrant {
-        require(supportedTokens[_token] && supportedAavePools[_pool], "Token and/or pool not supported.");
-        require(_shares > 0 && userShares[msg.sender][_token] >= _shares, "Invalid share amount.");
+        if (isAave) {
+            DataTypes.ReserveData memory reserveData = IPool(_destination).getReserveData(_token);
+            address aToken = reserveData.aTokenAddress;
+            if (aToken == address(0)) revert InvalidDestination();
 
-        uint256 totalSharesToken = totalShares[_token];
-        uint256 totalLiquidityToken = totalLiquidity[_token];
-        uint256 amountToWithdraw = (_shares * totalLiquidityToken) / totalSharesToken;
+            uint256 aTokenBalance = IERC20(aToken).balanceOf(address(this));
+            if (aTokenBalance < amountToWithdraw) revert WithdrawalFailed();
 
-        DataTypes.ReserveData memory reserveData = IPool(_pool).getReserveData(_token);
-        address aToken = reserveData.aTokenAddress;
-        require(aToken != address(0), "Invalid aToken address.");
+            IERC20(aToken).forceApprove(_destination, amountToWithdraw);
+            withdrawnAmount = IPool(_destination).withdraw(_token, amountToWithdraw, address(this));
+        } else {
+            uint256 balanceBefore = IERC20(_token).balanceOf(address(this));
+            IComet(_destination).withdraw(_token, amountToWithdraw);
+            withdrawnAmount = IERC20(_token).balanceOf(address(this)) - balanceBefore;
+        }
 
-        uint256 aTokenBalance = IERC20(aToken).balanceOf(address(this));
-        require(aTokenBalance >= amountToWithdraw, "Insufficient aToken balance.");
-
-        IERC20(aToken).forceApprove(_pool, amountToWithdraw);
-
-        uint256 withdrawnAmount = IPool(_pool).withdraw(_token, amountToWithdraw, address(this));
-        require(withdrawnAmount > 0, "Aave withdrawal failed.");
+        if (withdrawnAmount == 0) revert WithdrawalFailed();
 
         userShares[msg.sender][_token] -= _shares;
         totalShares[_token] -= _shares;
@@ -121,22 +114,17 @@ contract LiquidityManager is ReentrancyGuard, Ownable {
         emit SharesBurned(msg.sender, _token, withdrawnAmount, _shares);
     }
 
-    function withdrawFromCompound(address _token, address _market, uint256 _shares) external nonReentrant {
-        require(supportedTokens[_token] && supportedCometMarkets[_market], "Token and/or market not supported.");
-        require(_shares > 0 && userShares[msg.sender][_token] >= _shares, "Invalid share amount.");
-
-        uint256 totalSharesToken = totalShares[_token];
-        uint256 totalLiquidityToken = totalLiquidity[_token];
-        uint256 amountToWithdraw = (_shares * totalLiquidityToken) / totalSharesToken;
-
-        IComet(_market).withdraw(_token, amountToWithdraw);
-
-        userShares[msg.sender][_token] -= _shares;
-        totalShares[_token] -= _shares;
-        totalLiquidity[_token] -= amountToWithdraw;
-
-        IERC20(_token).safeTransfer(msg.sender, amountToWithdraw);
-
-        emit SharesBurned(msg.sender, _token, amountToWithdraw, _shares);
+    function updateTokenSupport(address _token, bool _status) external onlyOwner {
+        if (supportedTokens[_token] == _status) revert TokenSupportUnchanged();
+        if (_token == address(0)) revert InvalidAddress();
+        supportedTokens[_token] = _status;
+        emit TokenSupportUpdated(_token, _status);
+    }
+    
+    function updateMarketSupport(address _market, bool _status) external onlyOwner {
+        if (supportedMarkets[_market] == _status) revert MarketSupportUnchanged();
+        if (_market == address(0)) revert InvalidAddress();
+        supportedMarkets[_market] = _status;
+        emit MarketSupportUpdated(_market, _status);
     }
 }

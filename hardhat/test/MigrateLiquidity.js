@@ -19,7 +19,7 @@ describe("MigrateLiquidity", function () {
         await liquidityManager.waitForDeployment();
 
         // Add MockUSDC as a supported token
-        await liquidityManager.updateSupportedTokens(usdc.getAddress(), true);
+        await liquidityManager.updateTokenSupport(usdc.getAddress(), true);
     });
 
     describe("Deployment", function () {
@@ -129,66 +129,44 @@ describe("MigrateLiquidity", function () {
     describe("Update Supported Tokens", function () {
         it("should allow owner to add supported token", async function () {
             const newToken = ethers.Wallet.createRandom().address;
-            await expect(liquidityManager.updateSupportedTokens(newToken, true))
+            await expect(liquidityManager.updateTokenSupport(newToken, true))
                 .to.emit(liquidityManager, "TokenSupportUpdated")
                 .withArgs(newToken, true);
             expect(await liquidityManager.supportedTokens(newToken)).to.be.true;
         });
 
         it("should allow owner to remove supported token", async function () {
-            await expect(liquidityManager.updateSupportedTokens(usdc.getAddress(), false))
+            await expect(liquidityManager.updateTokenSupport(usdc.getAddress(), false))
                 .to.emit(liquidityManager, "TokenSupportUpdated")
                 .withArgs(usdc.getAddress(), false);
             expect(await liquidityManager.supportedTokens(usdc.getAddress())).to.be.false;
         });
 
-        it("should not update if token status is unchanged", async function () {
-            await expect(liquidityManager.updateSupportedTokens(usdc.getAddress(), true))
-                .to.be.revertedWith("Token status unchanged.");
+        it("should revert if token status is unchanged", async function () {
+            await expect(liquidityManager.updateTokenSupport(usdc.getAddress(), true))
+                .to.be.revertedWithCustomError(liquidityManager, "TokenSupportUnchanged");
         });
     });
 
-    describe("Update Supported Pools", function () {
-        it("should allow owner to add and remove supported pool", async function () {
-            const newPool = ethers.Wallet.createRandom().address;
-
-            // Add support for pool
-            await expect(liquidityManager.updateSupportedAavePools(newPool, true))
-                .to.emit(liquidityManager, "AavePoolSupportUpdated")
-                .withArgs(newPool, true);
-            expect(await liquidityManager.supportedAavePools(newPool)).to.be.true;
-
-            // Remove support for pool
-            await expect(liquidityManager.updateSupportedAavePools(newPool, false))
-                .to.emit(liquidityManager, "AavePoolSupportUpdated")
-                .withArgs(newPool, false);
-            expect(await liquidityManager.supportedAavePools(newPool)).to.be.false;
-
-            // Ensure the transaction reverts if status is the same
-            await expect(liquidityManager.updateSupportedAavePools(newPool, false))
-                .to.be.revertedWith("Pool status unchanged.");
-        });
-    })
-
-    describe("Update Supported Comet Markets", function () {
-        it("should allow owner to add and remove supported comet market", async function () {
+    describe("Update Supported Markets", function () {
+        it("should allow owner to add and remove supported markets", async function () {
             const newMarket = ethers.Wallet.createRandom().address;
 
             // Add support for market
-            await expect(liquidityManager.updateSupportedCometMarkets(newMarket, true))
-                .to.emit(liquidityManager, "CometMarketSupportUpdated")
+            await expect(liquidityManager.updateMarketSupport(newMarket, true))
+                .to.emit(liquidityManager, "MarketSupportUpdated")
                 .withArgs(newMarket, true);
-            expect(await liquidityManager.supportedCometMarkets(newMarket)).to.be.true;
+            expect(await liquidityManager.supportedMarkets(newMarket)).to.be.true;
 
             // Remove support for market
-            await expect(liquidityManager.updateSupportedCometMarkets(newMarket, false))
-                .to.emit(liquidityManager, "CometMarketSupportUpdated")
+            await expect(liquidityManager.updateMarketSupport(newMarket, false))
+                .to.emit(liquidityManager, "MarketSupportUpdated")
                 .withArgs(newMarket, false);
-            expect(await liquidityManager.supportedCometMarkets(newMarket)).to.be.false;
+            expect(await liquidityManager.supportedMarkets(newMarket)).to.be.false;
 
-            // Ensure the transaction reverts if status is the same
-            await expect(liquidityManager.updateSupportedCometMarkets(newMarket, false))
-                .to.be.revertedWith("Market status unchanged.");
+            // Ensure transaction reverts if status is unchanged
+            await expect(liquidityManager.updateMarketSupport(newMarket, false))
+                .to.be.revertedWithCustomError(liquidityManager, "MarketSupportUnchanged");
         });
-    })
+    });
 });
