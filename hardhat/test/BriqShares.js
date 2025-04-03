@@ -1,7 +1,7 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-describe("MigrateLiquidity", function () {
+describe("BriqShares", function () {
     let owner, vault, user, briqShares
 
     beforeEach(async () => {
@@ -42,6 +42,11 @@ describe("MigrateLiquidity", function () {
 
             await briqShares.connect(vault).burn(user.address, 1000);
             expect(await briqShares.balanceOf(user.address)).to.equal(0);
+        });
+
+        it("reverts unauthorized users", async function () {
+            await expect(briqShares.connect(owner).mint(user.address, 1000)).to.be.revertedWith("Only vault can mint");
+            await expect(briqShares.connect(owner).burn(user.address, 1000)).to.be.revertedWith("Only vault can burn");
         });
     });
 });
