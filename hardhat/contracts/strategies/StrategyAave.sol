@@ -31,12 +31,14 @@ contract StrategyAave is StrategyBase {
         if (_token == address(0)) revert InvalidAddress();
         if (supportedTokens[_token] == _status) revert TokenSupportUnchanged();
         if (_status && tokenToPool[_token] == IPool(address(0))) revert NoPoolForToken();
-        
+
         supportedTokens[_token] = _status;
+
         if (!_status) {
             delete tokenToPool[_token];
             delete tokenToAToken[_token];
         }
+
         emit TokenSupportUpdated(_token, _status);
     }
 
@@ -45,6 +47,7 @@ contract StrategyAave is StrategyBase {
         if (supportedPools[_pool] == _status) revert PoolSupportUnchanged();
 
         supportedPools[_pool] = _status;
+
         if (_status) {
             DataTypes.ReserveData memory data = IPool(_pool).getReserveData(_token);
             if (data.aTokenAddress == address(0)) revert("Token not supported by pool");
@@ -66,14 +69,21 @@ contract StrategyAave is StrategyBase {
 
         IERC20(_token).safeTransferFrom(vault, address(this), _amount);
         IERC20(_token).approve(address(pool), _amount);
-        pool.supply(_token, _amount, vault, 0);
+        pool.supply(_token, _amount, address(this), 0); // aTokens go to Strategy
     }
 
     function withdraw(address _token, uint256 _amount) external override onlyVault {
+        if (!supportedTokens[_token]) revert UnsupportedToken();
+        if (_amount == 0) revert InvalidAmount();
+        IPool pool = tokenToPool[_token];
+        if (address(pool) == address(0)) revert NoPoolForToken();
 
+        uint256 withdrawn = pool.withdraw(_token, _amount, vault); // Sends USDC back to vault
+        if (withdrawn < _amount) revert("Insufficient withdrawal");
     }
 
     function balanceOf(address _token) external view override returns (uint256) {
-
+        address aToken = tokenToAToken[_token];
+        return IERC20(aToken).balanceOf(address(this));
     }
 }
