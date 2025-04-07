@@ -22,6 +22,8 @@ contract StrategyAave is StrategyBase {
     error TokenSupportUnchanged();
     error PoolSupportUnchanged();
     error NoPoolForToken();
+    error InvalidAmount();
+    error UnsupportedToken();
 
     constructor(address _vault) StrategyBase(_vault) {}
 
@@ -56,8 +58,15 @@ contract StrategyAave is StrategyBase {
         emit PoolSupportUpdated(_pool, _status, _token);
     }
 
-    function deposit(address _token, uint256 amount) external override onlyVault {
+    function deposit(address _token, uint256 _amount) external override onlyVault {
+        if (!supportedTokens[_token]) revert UnsupportedToken();
+        if (_amount == 0) revert InvalidAmount();
+        IPool pool = tokenToPool[_token];
+        if (address(pool) == address(0)) revert NoPoolForToken();
 
+        IERC20(_token).safeTransferFrom(vault, address(this), _amount);
+        IERC20(_token).approve(address(pool), _amount);
+        pool.supply(_token, _amount, vault, 0);
     }
 
     function withdraw(address _token, uint256 _amount) external override onlyVault {
