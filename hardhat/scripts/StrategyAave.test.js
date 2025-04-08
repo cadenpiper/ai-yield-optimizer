@@ -87,8 +87,10 @@ async function testDepositFlow(deployer, impersonatedSigner, usdc, strategyAave)
   const aTokenAddress = await strategyAave.tokenToAToken(USDC_ADDRESS);
   const aToken = await ethers.getContractAt("IERC20", aTokenAddress);
   const aTokenBalance = await aToken.balanceOf(await strategyAave.getAddress());
+  const reportedBalance = await strategyAave.balanceOf(USDC_ADDRESS);
 
-  console.log(`🏦 aToken balance of Strategy: ${ethers.formatUnits(aTokenBalance, 6)} aUSDC\n`);
+  console.log(`🏦 aToken balance of Strategy: ${ethers.formatUnits(aTokenBalance, 6)} aUSDC`);
+  console.log(`📈 balanceOf() from contract: ${ethers.formatUnits(reportedBalance, 6)} aUSDC\n`);
   console.log("🎯 Deposit flow completed.\n");
 }
 
@@ -102,9 +104,11 @@ async function testWithdrawFlow(deployer, usdc, strategyAave) {
   const aTokenAddress = await strategyAave.tokenToAToken(USDC_ADDRESS);
   const aToken = await ethers.getContractAt("IERC20", aTokenAddress);
   const aTokenBefore = await aToken.balanceOf(strategyAddress);
+  const balanceBefore = await strategyAave.balanceOf(USDC_ADDRESS);
 
   console.log(`📦 USDC balance before withdraw: ${ethers.formatUnits(usdcBefore, 6)} USDC`);
   console.log(`🪙 aToken balance before withdraw (Strategy): ${ethers.formatUnits(aTokenBefore, 6)} aUSDC`);
+  console.log(`📊 balanceOf() before withdraw: ${ethers.formatUnits(balanceBefore, 6)} aUSDC`);
 
   const tx = await strategyAave.connect(deployer).withdraw(USDC_ADDRESS, withdrawAmount);
   await tx.wait();
@@ -112,9 +116,12 @@ async function testWithdrawFlow(deployer, usdc, strategyAave) {
 
   const usdcAfter = await usdc.balanceOf(deployer.address);
   const aTokenAfter = await aToken.balanceOf(strategyAddress);
+  const balanceAfter = await strategyAave.balanceOf(USDC_ADDRESS);
 
   console.log(`📦 USDC balance after withdraw: ${ethers.formatUnits(usdcAfter, 6)} USDC`);
-  console.log(`🪙 aToken balance after withdraw (Strategy): ${ethers.formatUnits(aTokenAfter, 6)} aUSDC\n`);
+  console.log(`🪙 aToken balance after withdraw (Strategy): ${ethers.formatUnits(aTokenAfter, 6)} aUSDC`);
+  console.log(`📊 balanceOf() after withdraw: ${ethers.formatUnits(balanceAfter, 6)} aUSDC\n`);
+
   console.log("🎯 Withdraw flow completed.\n");
 }
 
