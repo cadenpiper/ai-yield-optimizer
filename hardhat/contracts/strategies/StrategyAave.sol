@@ -5,16 +5,17 @@ import "../StrategyBase.sol";
 import { Errors } from "../libraries/Errors.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@aave/core-v3/contracts/interfaces/IPool.sol";
 import "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 
-contract StrategyAave is StrategyBase {
+contract StrategyAave is StrategyBase, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     mapping(address => bool) public supportedTokens;
     mapping(address => bool) public supportedPools;
     mapping(address => address) public tokenToAToken; // token => aToken
-    mapping(address => IPool) public tokenToPool;    // token => Aave pool
+    mapping(address => IPool) public tokenToPool;     // token => Aave pool
 
     event TokenSupportUpdated(address indexed token, bool status);
     event PoolSupportUpdated(address indexed pool, bool status, address indexed token);
@@ -55,7 +56,7 @@ contract StrategyAave is StrategyBase {
         emit PoolSupportUpdated(_pool, _status, _token);
     }
 
-    function deposit(address _token, uint256 _amount) external override onlyVault {
+    function deposit(address _token, uint256 _amount) external override onlyVault nonReentrant {
         if (!supportedTokens[_token]) revert Errors.UnsupportedToken();
         if (_amount == 0) revert Errors.InvalidAmount();
         IPool pool = tokenToPool[_token];
@@ -63,10 +64,10 @@ contract StrategyAave is StrategyBase {
 
         IERC20(_token).safeTransferFrom(vault, address(this), _amount);
         IERC20(_token).approve(address(pool), _amount);
-        pool.supply(_token, _amount, address(this), 0); // aTokens go to StrategyAave
+        pool.supply(_token, _amount, address(this), 0); // aTokens go to StrategyAave, not vault
     }
 
-    function withdraw(address _token, uint256 _amount) external override onlyVault {
+    function withdraw(address _token, uint256 _amount) external override onlyVault  nonReentrant {
         if (!supportedTokens[_token]) revert Errors.UnsupportedToken();
         if (_amount == 0) revert Errors.InvalidAmount();
         IPool pool = tokenToPool[_token];

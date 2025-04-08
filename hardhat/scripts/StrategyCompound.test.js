@@ -2,9 +2,9 @@ const { ethers } = require("hardhat");
 const { expect } = require("chai");
 
 // === CONFIGURATION ===
-const USDC_ADDRESS      = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-const AAVE_POOL_ADDRESS = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
-const USDC_WHALE        = "0xaD354CfBAa4A8572DD6Df021514a3931A8329Ef5";
+const USDC_ADDRESS   = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const COMET_USDC     = "0xc3d688B66703497DAA19211EEdff47f25384cdc3";
+const USDC_WHALE     = "0xaD354CfBAa4A8572DD6Df021514a3931A8329Ef5";
 
 // === UTILITIES ===
 const logTitle = (title) => console.log(`\n🔹 ${title.toUpperCase()} 🔹`);
@@ -12,10 +12,9 @@ const logLine = (label, value) => console.log(`   ${label.padEnd(30)} ${value}`)
 
 async function logState(title, strategy) {
   logTitle(`State: ${title}`);
-  logLine("Supported Pool", await strategy.supportedPools(AAVE_POOL_ADDRESS));
+  logLine("Supported Market", await strategy.supportedMarkets(COMET_USDC));
   logLine("Supported Token", await strategy.supportedTokens(USDC_ADDRESS));
-  logLine("Token → Pool", await strategy.tokenToPool(USDC_ADDRESS));
-  logLine("Token → aToken", await strategy.tokenToAToken(USDC_ADDRESS));
+  logLine("Token → Comet", await strategy.tokenToComet(USDC_ADDRESS));
   console.log();
 }
 
@@ -36,11 +35,11 @@ async function setupEnvironment() {
   });
 
   const usdc = await ethers.getContractAt("IERC20", USDC_ADDRESS);
-  const Strategy = await ethers.getContractFactory("StrategyAave");
+  const Strategy = await ethers.getContractFactory("StrategyCompoundComet");
   const strategy = await Strategy.deploy(deployer.address);
   await strategy.waitForDeployment();
 
-  console.log(`🚀 Deployed StrategyAave at ${await strategy.getAddress()}\n`);
+  console.log(`🚀 Deployed StrategyCompoundComet at ${await strategy.getAddress()}\n`);
   return { deployer, whale, usdc, strategy };
 }
 
@@ -48,19 +47,19 @@ async function setupEnvironment() {
 async function configureStrategy(deployer, strategy) {
   logTitle("Configuration");
 
-  await strategy.connect(deployer).updatePoolSupport(AAVE_POOL_ADDRESS, USDC_ADDRESS, true);
-  logLine("Enabled Aave Pool", "✅");
+  await strategy.connect(deployer).updateMarketSupport(COMET_USDC, USDC_ADDRESS, true);
+  logLine("Enabled Market", "✅");
 
   await strategy.connect(deployer).updateTokenSupport(USDC_ADDRESS, true);
-  logLine("Enabled USDC Token", "✅");
+  logLine("Enabled Token", "✅");
 
   await logState("After Enabling", strategy);
 
   await strategy.connect(deployer).updateTokenSupport(USDC_ADDRESS, false);
-  logLine("Disabled USDC Token", "🛑");
+  logLine("Disabled Token", "🛑");
 
-  await strategy.connect(deployer).updatePoolSupport(AAVE_POOL_ADDRESS, USDC_ADDRESS, false);
-  logLine("Disabled Aave Pool", "🛑");
+  await strategy.connect(deployer).updateMarketSupport(COMET_USDC, USDC_ADDRESS, false);
+  logLine("Disabled Market", "🛑");
 
   await logState("After Disabling", strategy);
 }
@@ -68,7 +67,7 @@ async function configureStrategy(deployer, strategy) {
 async function testDeposit(deployer, whale, usdc, strategy) {
   logTitle("Deposit Flow");
 
-  await strategy.connect(deployer).updatePoolSupport(AAVE_POOL_ADDRESS, USDC_ADDRESS, true);
+  await strategy.connect(deployer).updateMarketSupport(COMET_USDC, USDC_ADDRESS, true);
   await strategy.connect(deployer).updateTokenSupport(USDC_ADDRESS, true);
   await logState("Before Deposit", strategy);
 
@@ -82,14 +81,8 @@ async function testDeposit(deployer, whale, usdc, strategy) {
   await strategy.connect(deployer).deposit(USDC_ADDRESS, depositAmount);
   logLine("Deposit Executed", "📥");
 
-  const aTokenAddress = await strategy.tokenToAToken(USDC_ADDRESS);
-  const aToken = await ethers.getContractAt("IERC20", aTokenAddress);
-
-  const aTokenBalance = await aToken.balanceOf(await strategy.getAddress());
-  const reportedBalance = await strategy.balanceOf(USDC_ADDRESS);
-
-  logLine("aToken Balance (Strategy)", `${ethers.formatUnits(aTokenBalance, 6)} aUSDC`);
-  logLine("balanceOf() Return", `${ethers.formatUnits(reportedBalance, 6)} aUSDC`);
+  const balance = await strategy.balanceOf(USDC_ADDRESS);
+  logLine("balanceOf() Return", `${ethers.formatUnits(balance, 6)} USDC`);
   console.log();
 }
 
@@ -97,61 +90,47 @@ async function testPartialWithdraw(deployer, usdc, strategy) {
   logTitle("Partial Withdraw");
 
   const half = ethers.parseUnits("50", 6);
-  const strategyAddr = await strategy.getAddress();
-  const aTokenAddr = await strategy.tokenToAToken(USDC_ADDRESS);
-  const aToken = await ethers.getContractAt("IERC20", aTokenAddr);
 
   const usdcBefore = await usdc.balanceOf(deployer.address);
-  const aTokenBefore = await aToken.balanceOf(strategyAddr);
   const balanceBefore = await strategy.balanceOf(USDC_ADDRESS);
 
   logLine("USDC Before (Vault)", `${ethers.formatUnits(usdcBefore, 6)} USDC`);
-  logLine("aToken Before (Strategy)", `${ethers.formatUnits(aTokenBefore, 6)} aUSDC`);
-  logLine("balanceOf() Before", `${ethers.formatUnits(balanceBefore, 6)} aUSDC`);
+  logLine("balanceOf() Before", `${ethers.formatUnits(balanceBefore, 6)} USDC`);
 
   await strategy.connect(deployer).withdraw(USDC_ADDRESS, half);
 
   const usdcAfter = await usdc.balanceOf(deployer.address);
-  const aTokenAfter = await aToken.balanceOf(strategyAddr);
   const balanceAfter = await strategy.balanceOf(USDC_ADDRESS);
 
   logLine("USDC After (Vault)", `${ethers.formatUnits(usdcAfter, 6)} USDC`);
-  logLine("aToken After (Strategy)", `${ethers.formatUnits(aTokenAfter, 6)} aUSDC`);
-  logLine("balanceOf() After", `${ethers.formatUnits(balanceAfter, 6)} aUSDC`);
+  logLine("balanceOf() After", `${ethers.formatUnits(balanceAfter, 6)} USDC`);
   console.log();
 }
 
 async function testWithdraw(deployer, usdc, strategy) {
   logTitle("Withdraw Flow");
 
-  const amount = ethers.parseUnits("50", 6); // Remaining half after partial
-  const strategyAddr = await strategy.getAddress();
-  const aTokenAddr = await strategy.tokenToAToken(USDC_ADDRESS);
-  const aToken = await ethers.getContractAt("IERC20", aTokenAddr);
+  const remaining = await strategy.balanceOf(USDC_ADDRESS);
 
   const usdcBefore = await usdc.balanceOf(deployer.address);
-  const aTokenBefore = await aToken.balanceOf(strategyAddr);
   const balanceBefore = await strategy.balanceOf(USDC_ADDRESS);
 
   logLine("USDC Before (Vault)", `${ethers.formatUnits(usdcBefore, 6)} USDC`);
-  logLine("aToken Before (Strategy)", `${ethers.formatUnits(aTokenBefore, 6)} aUSDC`);
-  logLine("balanceOf() Before", `${ethers.formatUnits(balanceBefore, 6)} aUSDC`);
+  logLine("balanceOf() Before", `${ethers.formatUnits(balanceBefore, 6)} USDC`);
 
-  await strategy.connect(deployer).withdraw(USDC_ADDRESS, amount);
+  await strategy.connect(deployer).withdraw(USDC_ADDRESS, remaining);
 
   const usdcAfter = await usdc.balanceOf(deployer.address);
-  const aTokenAfter = await aToken.balanceOf(strategyAddr);
   const balanceAfter = await strategy.balanceOf(USDC_ADDRESS);
 
   logLine("USDC After (Vault)", `${ethers.formatUnits(usdcAfter, 6)} USDC`);
-  logLine("aToken After (Strategy)", `${ethers.formatUnits(aTokenAfter, 6)} aUSDC`);
-  logLine("balanceOf() After", `${ethers.formatUnits(balanceAfter, 6)} aUSDC`);
+  logLine("balanceOf() After", `${ethers.formatUnits(balanceAfter, 6)} USDC`);
   console.log();
 }
 
 // === MAIN RUNNER ===
 async function runTest() {
-  console.log("🧪 Starting StrategyAave Test on Mainnet Fork...\n");
+  console.log("🧪 Starting StrategyCompoundComet Test on Mainnet Fork...\n");
 
   const { deployer, whale, usdc, strategy } = await setupEnvironment();
 
