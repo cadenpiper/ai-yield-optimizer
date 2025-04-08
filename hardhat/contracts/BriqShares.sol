@@ -7,10 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract BriqShares is ERC20, Ownable {
     address public vault;
 
-    constructor(string memory name, string memory symbol) 
-        ERC20(name, symbol) 
-        Ownable(msg.sender) 
-    {}
+    constructor(string memory name, string memory symbol) ERC20(name, symbol) Ownable(msg.sender) {}
 
     function setVault(address _vault) external onlyOwner {
         require(_vault != address(0), "Invalid vault address");
