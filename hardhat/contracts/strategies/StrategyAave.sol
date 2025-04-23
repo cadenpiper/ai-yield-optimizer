@@ -6,10 +6,11 @@ import { Errors } from "../libraries/Errors.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@aave/core-v3/contracts/interfaces/IPool.sol";
 import "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 
-contract StrategyAave is StrategyBase, ReentrancyGuard {
+contract StrategyAave is StrategyBase, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     mapping(address => bool) public supportedTokens;
@@ -19,10 +20,20 @@ contract StrategyAave is StrategyBase, ReentrancyGuard {
 
     event TokenSupportUpdated(address indexed token, bool status);
     event PoolSupportUpdated(address indexed pool, bool status, address indexed token);
+    event CoordinatorUpdated(address indexed coordinator);
 
-    constructor(address _vault) StrategyBase(_vault) {}
+    constructor() StrategyBase() Ownable(msg.sender) {}
 
-    function updateTokenSupport(address _token, bool _status) external onlyVault {
+    function setCoordinator(address _coordinator) external override onlyOwner {
+        if (_coordinator == address(0)) revert Errors.InvalidAddress();
+        if (_coordinator == coordinator) revert Errors.SameCoordinator();
+
+        coordinator = _coordinator;
+
+        emit CoordinatorUpdated(_coordinator);
+    }
+
+    function updateTokenSupport(address _token, bool _status) external onlyOwner {
         if (_token == address(0)) revert Errors.InvalidAddress();
         if (supportedTokens[_token] == _status) revert Errors.TokenSupportUnchanged();
         if (_status && tokenToPool[_token] == IPool(address(0))) revert Errors.NoPoolForToken();
@@ -37,7 +48,7 @@ contract StrategyAave is StrategyBase, ReentrancyGuard {
         emit TokenSupportUpdated(_token, _status);
     }
 
-    function updatePoolSupport(address _pool, address _token, bool _status) external onlyVault {
+    function updatePoolSupport(address _pool, address _token, bool _status) external onlyOwner {
         if (_pool == address(0) || _token == address(0)) revert Errors.InvalidAddress();
         if (supportedPools[_pool] == _status) revert Errors.PoolSupportUnchanged();
 
@@ -56,24 +67,24 @@ contract StrategyAave is StrategyBase, ReentrancyGuard {
         emit PoolSupportUpdated(_pool, _status, _token);
     }
 
-    function deposit(address _token, uint256 _amount) external override onlyVault nonReentrant {
+    function deposit(address _token, uint256 _amount) external override onlyCoordinator nonReentrant {
         if (!supportedTokens[_token]) revert Errors.UnsupportedToken();
         if (_amount == 0) revert Errors.InvalidAmount();
         IPool pool = tokenToPool[_token];
         if (address(pool) == address(0)) revert Errors.NoPoolForToken();
 
-        IERC20(_token).safeTransferFrom(vault, address(this), _amount);
+        IERC20(_token).safeTransferFrom(coordinator, address(this), _amount);
         IERC20(_token).approve(address(pool), _amount);
         pool.supply(_token, _amount, address(this), 0); // aTokens go to StrategyAave, not vault
     }
 
-    function withdraw(address _token, uint256 _amount) external override onlyVault  nonReentrant {
+    function withdraw(address _token, uint256 _amount) external override onlyCoordinator nonReentrant {
         if (!supportedTokens[_token]) revert Errors.UnsupportedToken();
         if (_amount == 0) revert Errors.InvalidAmount();
         IPool pool = tokenToPool[_token];
         if (address(pool) == address(0)) revert Errors.NoPoolForToken();
 
-        uint256 withdrawn = pool.withdraw(_token, _amount, vault); // Sends USDC back to vault
+        uint256 withdrawn = pool.withdraw(_token, _amount, coordinator); // Sends USDC back to vault
         if (withdrawn < _amount) revert("Insufficient withdrawal");
     }
 
