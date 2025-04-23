@@ -1,4 +1,4 @@
-const { ethers } = require("hardhat");
+const { ethers, userConfig } = require("hardhat");
 const { expect } = require("chai");
 
 const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -75,6 +75,7 @@ async function setupEnvironment() {
 }
 
 async function configureStrategyForToken(vault, strategyCompound, strategyAave, strategyCoordinator) {
+  // Update support for pools and USDC token for both strategies
   await strategyCompound.connect(vault).updateMarketSupport(COMET_USDC, USDC_ADDRESS, true);
   await strategyCompound.connect(vault).updateTokenSupport(USDC_ADDRESS, true);
   await logCompoundState("Compound After Enabling", strategyCompound);
@@ -83,6 +84,7 @@ async function configureStrategyForToken(vault, strategyCompound, strategyAave, 
   await strategyAave.connect(vault).updateTokenSupport(USDC_ADDRESS, true);
   await logAaveState("Aave After Enabling", strategyAave);
 
+  // Test updating token strategies
   await strategyCoordinator.connect(vault).setStrategyForToken(USDC_ADDRESS, 1);
   await logCoordinatorState("Coordinator After Enabling Strategy 1", strategyCoordinator);
 
@@ -91,9 +93,9 @@ async function configureStrategyForToken(vault, strategyCompound, strategyAave, 
 }
 
 async function deposit(vault, whale, usdc, strategyCoordinator) {
-  // Strategy 1
+  // Strategy 1 (Compound V3)
   await strategyCoordinator.connect(vault).setStrategyForToken(USDC_ADDRESS, 1);
-  await logCoordinatorState("Before Deposit Srategy 1", strategyCoordinator);
+  await logCoordinatorState("Deposit Srategy 1", strategyCoordinator);
 
   const depositAmount = ethers.parseUnits("100", 6);
   logLine("Depositing", `${ethers.formatUnits(depositAmount, 6)} USDC`);
@@ -107,9 +109,9 @@ async function deposit(vault, whale, usdc, strategyCoordinator) {
   const balance1 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
   logLine("balanceOf() return", `${ethers.formatUnits(balance1, 6)} USDC`);
 
-  // Strategy 0
+  // Strategy 0 (AAVE V3)
   await strategyCoordinator.connect(vault).setStrategyForToken(USDC_ADDRESS, 0);
-  await logCoordinatorState("Before Deposit Srategy 0", strategyCoordinator);
+  await logCoordinatorState("Deposit Srategy 0", strategyCoordinator);
 
   logLine("Depositing", `${ethers.formatUnits(depositAmount, 6)} USDC`);
 
@@ -123,6 +125,37 @@ async function deposit(vault, whale, usdc, strategyCoordinator) {
   logLine("balanceOf() return", `${ethers.formatUnits(balance0, 6)} USDC`);
 }
 
+async function withdraw(vault, whale, usdc, strategyCoordinator) {
+  // Strategy 1
+  await strategyCoordinator.connect(vault).setStrategyForToken(USDC_ADDRESS, 1);
+  await logCoordinatorState("Withdraw Strategy 1", strategyCoordinator);
+
+  const existingBalance = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  logLine("Existing Balance", `${ethers.formatUnits(existingBalance, 6)} USDC`);
+
+  await strategyCoordinator.connect(vault).withdraw(USDC_ADDRESS, existingBalance);
+
+  const balance1 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  logLine("balanceOf() return", `${ethers.formatUnits(balance1, 6)} USDC`);
+
+  const vaultBalance1 = await usdc.balanceOf(vault.address);
+  logLine("Vault Balance After Withdraw", `${ethers.formatUnits(vaultBalance1, 6)} USDC`);
+
+  // Strategy 0
+  await strategyCoordinator.connect(vault).setStrategyForToken(USDC_ADDRESS, 0);
+  await logCoordinatorState("Withdraw Strategy 0", strategyCoordinator);
+
+  logLine("Existing Balance", `${ethers.formatUnits(existingBalance, 6)} USDC`);
+
+  await strategyCoordinator.connect(vault).withdraw(USDC_ADDRESS, existingBalance);
+
+  const balance0 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  logLine("balanceOf() return", `${ethers.formatUnits(balance0, 6)} USDC`);
+
+  const vaultBalance0 = await usdc.balanceOf(vault.address);
+  logLine("Vault Balance After Withdraw", `${ethers.formatUnits(vaultBalance0, 6)} USDC`);
+}
+
 async function runTest() {
   console.log("\nStarting StrategyCoordinator Test on Mainnet Fork...");
 
@@ -130,6 +163,7 @@ async function runTest() {
 
   await configureStrategyForToken(vault, strategyCompound, strategyAave, strategyCoordinator);
   await deposit(vault, whale, usdc, strategyCoordinator);
+  await withdraw(vault, whale, usdc, strategyCoordinator);
 }
 
 async function main() {

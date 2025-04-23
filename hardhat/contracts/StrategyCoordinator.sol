@@ -93,6 +93,9 @@ contract StrategyCoordinator is Ownable, ReentrancyGuard {
             strategyCompound.withdraw(_token, _amount);
         }
 
+        // Transfer tokens to vault contract
+        IERC20(_token).transfer(vault, _amount);
+
         emit Withdrawal(_token, _amount, strategyType);
     }
 
