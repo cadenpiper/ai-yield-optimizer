@@ -11,6 +11,7 @@ library Errors {
   error UnsupportedTokenForPool();
   error InsufficientWithdrawal();
   error OnlyVault();
+  error SameCoordinator();
   error StrategyAlreadyActive();
   error StrategyNotActive();
   error InvalidStrategyPair();

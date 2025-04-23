@@ -50,13 +50,13 @@ async function setupEnvironment() {
 
   const usdc = await ethers.getContractAt("IERC20", USDC_ADDRESS);
   const StrategyCompound = await ethers.getContractFactory("StrategyCompoundComet");
-  const strategyCompound = await StrategyCompound.deploy(vault.address);
+  const strategyCompound = await StrategyCompound.deploy();
   await strategyCompound.waitForDeployment();
 
   console.log(`\nDeployed StrategyCompoundComet at ${await strategyCompound.getAddress()}`);
 
   const StrategyAave = await ethers.getContractFactory("StrategyAave");
-  const strategyAave = await StrategyAave.deploy(vault.address);
+  const strategyAave = await StrategyAave.deploy();
   await strategyAave.waitForDeployment();
 
   console.log(`Deployed StrategyAave at ${await strategyAave.getAddress()}`);
@@ -66,6 +66,10 @@ async function setupEnvironment() {
   await strategyCoordinator.waitForDeployment();
 
   console.log(`Deployed StrategyCoordinator at ${await strategyCoordinator.getAddress()}\n`)
+
+  // Set Coordinator contract address
+  await strategyCompound.connect(vault).setCoordinator(await strategyCoordinator.getAddress());
+  await strategyAave.connect(vault).setCoordinator(await strategyCoordinator.getAddress());
 
   return { vault, whale, usdc, strategyCompound, strategyAave, strategyCoordinator };
 }
@@ -86,12 +90,46 @@ async function configureStrategyForToken(vault, strategyCompound, strategyAave, 
   await logCoordinatorState("Coordinator After Enabling Strategy 0", strategyCoordinator);
 }
 
+async function deposit(vault, whale, usdc, strategyCoordinator) {
+  // Strategy 1
+  await strategyCoordinator.connect(vault).setStrategyForToken(USDC_ADDRESS, 1);
+  await logCoordinatorState("Before Deposit Srategy 1", strategyCoordinator);
+
+  const depositAmount = ethers.parseUnits("100", 6);
+  logLine("Depositing", `${ethers.formatUnits(depositAmount, 6)} USDC`);
+
+  await usdc.connect(whale).transfer(vault.address, depositAmount);
+  await usdc.connect(vault).approve(await strategyCoordinator.getAddress(), depositAmount);
+
+  await strategyCoordinator.connect(vault).deposit(USDC_ADDRESS, depositAmount);
+  logLine("Deposit Executed", "✅");
+
+  const balance1 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  logLine("balanceOf() return", `${ethers.formatUnits(balance1, 6)} USDC`);
+
+  // Strategy 0
+  await strategyCoordinator.connect(vault).setStrategyForToken(USDC_ADDRESS, 0);
+  await logCoordinatorState("Before Deposit Srategy 0", strategyCoordinator);
+
+  logLine("Depositing", `${ethers.formatUnits(depositAmount, 6)} USDC`);
+
+  await usdc.connect(whale).transfer(vault.address, depositAmount);
+  await usdc.connect(vault).approve(await strategyCoordinator.getAddress(), depositAmount);
+
+  await strategyCoordinator.connect(vault).deposit(USDC_ADDRESS, depositAmount);
+  logLine("Deposit Executed", "✅");
+
+  const balance0 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  logLine("balanceOf() return", `${ethers.formatUnits(balance0, 6)} USDC`);
+}
+
 async function runTest() {
-  console.log("\nStarting StrategyCoordinator Test on Mainnet Fork...\n");
+  console.log("\nStarting StrategyCoordinator Test on Mainnet Fork...");
 
   const { vault, whale, usdc, strategyCompound, strategyAave, strategyCoordinator } = await setupEnvironment();
 
   await configureStrategyForToken(vault, strategyCompound, strategyAave, strategyCoordinator);
+  await deposit(vault, whale, usdc, strategyCoordinator);
 }
 
 async function main() {

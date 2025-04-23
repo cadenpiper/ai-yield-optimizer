@@ -44,7 +44,7 @@ contract StrategyCoordinator is Ownable, ReentrancyGuard {
         _;
     }
 
-    function setStrategyForToken(address _token, StrategyType _strategyType) external onlyOwner {
+    function setStrategyForToken(address _token, StrategyType _strategyType) external onlyVault {
         if (_token == address(0)) revert Errors.InvalidAddress();
         
         // Check if the token is supported by the selected strategy
