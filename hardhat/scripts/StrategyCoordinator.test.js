@@ -106,7 +106,7 @@ async function deposit(vault, whale, usdc, strategyCoordinator) {
   await strategyCoordinator.connect(vault).deposit(USDC_ADDRESS, depositAmount);
   logLine("Deposit Executed", "✅");
 
-  const balance0 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const balance0 = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
   logLine("AAVE Balance", `${ethers.formatUnits(balance0, 6)} USDC`);
 
   // Strategy 1 Deposit (Compound V3)
@@ -121,7 +121,7 @@ async function deposit(vault, whale, usdc, strategyCoordinator) {
   await strategyCoordinator.connect(vault).deposit(USDC_ADDRESS, depositAmount);
   logLine("Deposit Executed", "✅");
 
-  const balance1 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const balance1 = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
   logLine("Compound Balance", `${ethers.formatUnits(balance1, 6)} USDC`);
 }
 
@@ -130,12 +130,12 @@ async function withdraw(vault, usdc, strategyCoordinator) {
   await strategyCoordinator.connect(vault).setStrategyForToken(USDC_ADDRESS, 0);
   await logCoordinatorState("Withdraw Strategy 0", strategyCoordinator);
 
-  const existingBalance0 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const existingBalance0 = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
   logLine("Existing Balance", `${ethers.formatUnits(existingBalance0, 6)} USDC`);
 
   await strategyCoordinator.connect(vault).withdraw(USDC_ADDRESS, existingBalance0);
 
-  const balance0 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const balance0 = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
   logLine("balanceOf() return", `${ethers.formatUnits(balance0, 6)} USDC`);
 
   const vaultBalance0 = await usdc.balanceOf(vault.address);
@@ -145,12 +145,12 @@ async function withdraw(vault, usdc, strategyCoordinator) {
   await strategyCoordinator.connect(vault).setStrategyForToken(USDC_ADDRESS, 1);
   await logCoordinatorState("Withdraw Strategy 1", strategyCoordinator);
 
-  const existingBalance1 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const existingBalance1 = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
   logLine("Existing Balance", `${ethers.formatUnits(existingBalance1, 6)} USDC`);
 
   await strategyCoordinator.connect(vault).withdraw(USDC_ADDRESS, existingBalance1);
 
-  const balance1 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const balance1 = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
   logLine("balanceOf() return", `${ethers.formatUnits(balance1, 6)} USDC`);
 
   const vaultBalance1 = await usdc.balanceOf(vault.address);
@@ -166,14 +166,14 @@ async function emergencyWithdraw(vault, usdc, strategyCoordinator) {
 
   await strategyCoordinator.connect(vault).deposit(USDC_ADDRESS, depositAmount);
 
-  const balance0 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const balance0 = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
   logLine("Existing Strategy 0 Balance:", `${ethers.formatUnits(balance0, 6)} USDC`);
 
   const vaultBalance0Before = await usdc.balanceOf(vault.address);
   logLine("Vault Balance Before Withdrawal", `${ethers.formatUnits(vaultBalance0Before, 6)} USDC`);
 
   await strategyCoordinator.connect(vault).emergencyWithdraw(USDC_ADDRESS);
-  const balance0After = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const balance0After = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
 
   logLine("Remaining Strategy 0 Balance:", `${ethers.formatUnits(balance0After, 6)} USDC`);
 
@@ -188,14 +188,14 @@ async function emergencyWithdraw(vault, usdc, strategyCoordinator) {
 
   await strategyCoordinator.connect(vault).deposit(USDC_ADDRESS, depositAmount);
 
-  const balance1 = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const balance1 = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
   logLine("Existing Strategy 1 Balance:", `${ethers.formatUnits(balance1, 6)} USDC`);
 
   const vaultBalance1Before = await usdc.balanceOf(vault.address);
   logLine("Vault Balance Before Withdrawal", `${ethers.formatUnits(vaultBalance1Before, 6)} USDC`);
 
   await strategyCoordinator.connect(vault).emergencyWithdraw(USDC_ADDRESS);
-  const balance1After = await strategyCoordinator.balanceOf(USDC_ADDRESS);
+  const balance1After = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
 
   logLine("Remaining Strategy 1 Balance:", `${ethers.formatUnits(balance1After, 6)} USDC`);
 
