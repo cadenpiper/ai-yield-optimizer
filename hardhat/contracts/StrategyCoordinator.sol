@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract StrategyCoordinator is Ownable, ReentrancyGuard {
-    address public immutable vault;
+    address public vault;
     StrategyAave public strategyAave;
     StrategyCompoundComet public strategyCompound;
 
@@ -27,14 +27,12 @@ contract StrategyCoordinator is Ownable, ReentrancyGuard {
     event Withdrawal(address indexed token, uint256 amount, StrategyType strategyType);
 
     constructor(
-        address _vault,
         address _strategyAave,
         address _strategyCompound
     ) Ownable(msg.sender) {
-        if (_vault == address(0) || _strategyAave == address(0) || _strategyCompound == address(0)) 
+        if ( _strategyAave == address(0) || _strategyCompound == address(0)) 
             revert Errors.InvalidAddress();
         
-        vault = _vault;
         strategyAave = StrategyAave(_strategyAave);
         strategyCompound = StrategyCompoundComet(_strategyCompound);
     }
@@ -44,7 +42,12 @@ contract StrategyCoordinator is Ownable, ReentrancyGuard {
         _;
     }
 
-    function setStrategyForToken(address _token, StrategyType _strategyType) external onlyVault {
+    function updateVaultAddress(address _vault) external onlyOwner {
+        if (_vault == address(0)) revert Errors.InvalidAddress();
+        vault = _vault;
+    }
+
+    function setStrategyForToken(address _token, StrategyType _strategyType) external onlyOwner {
         if (_token == address(0)) revert Errors.InvalidAddress();
         
         // Check if the token is supported by the selected strategy
@@ -93,10 +96,13 @@ contract StrategyCoordinator is Ownable, ReentrancyGuard {
             strategyCompound.withdraw(_token, _amount);
         }
 
+        // Transfer tokens to vault contract
+        IERC20(_token).transfer(vault, _amount);
+
         emit Withdrawal(_token, _amount, strategyType);
     }
 
-    function balanceOf(address _token) external view returns (uint256) {
+    function getStrategyBalance(address _token) external view returns (uint256) {
         if (!supportedTokens[_token]) return 0;
 
         StrategyType strategyType = tokenToStrategy[_token];
@@ -108,6 +114,19 @@ contract StrategyCoordinator is Ownable, ReentrancyGuard {
         }
         
         return 0;
+    }
+
+    // Helper for minting shares and tracking total token balance across strategies
+    function getTotalTokenBalance(address _token) external view returns (uint256) {
+        uint256 total = 0;
+        if (strategyAave.supportedTokens(_token)) {
+            total += strategyAave.balanceOf(_token);
+        }
+        if (strategyCompound.supportedTokens(_token)) {
+            total += strategyCompound.balanceOf(_token);
+        }
+
+        return total;
     }
 
     // Emergency functions
