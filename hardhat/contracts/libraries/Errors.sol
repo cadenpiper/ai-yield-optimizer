@@ -7,6 +7,7 @@ library Errors {
   error PoolSupportUnchanged();
   error NoPoolForToken();
   error InvalidAmount();
+  error InvalidShares();
   error UnsupportedToken();
   error UnsupportedTokenForPool();
   error InsufficientWithdrawal();

@@ -91,9 +91,23 @@ contract StrategyCoordinator is Ownable, ReentrancyGuard {
         
         // Withdraw from appropriate strategy
         if (strategyType == StrategyType.AAVE) {
-            strategyAave.withdraw(_token, _amount);
+            uint256 compoundBalance = strategyCompound.balanceOf(_token);
+            if (compoundBalance >= _amount) {
+                strategyCompound.withdraw(_token, _amount);
+            } else {
+                uint256 remainingBalance = _amount - compoundBalance;
+                strategyCompound.withdraw(_token, compoundBalance);
+                strategyAave.withdraw(_token, remainingBalance);
+            }
         } else if (strategyType == StrategyType.COMPOUND) {
-            strategyCompound.withdraw(_token, _amount);
+            uint256 aaveBalance = strategyAave.balanceOf(_token);
+            if (aaveBalance >= _amount) {
+                strategyAave.withdraw(_token, _amount);
+            } else {
+                uint256 remainingBalance = _amount - aaveBalance;
+                strategyAave.withdraw(_token, aaveBalance);
+                strategyCompound.withdraw(_token, remainingBalance);
+            }
         }
 
         // Transfer tokens to vault contract
@@ -102,7 +116,7 @@ contract StrategyCoordinator is Ownable, ReentrancyGuard {
         emit Withdrawal(_token, _amount, strategyType);
     }
 
-    function getStrategyBalance(address _token) external view returns (uint256) {
+    function getStrategyBalance(address _token) public view returns (uint256) {
         if (!supportedTokens[_token]) return 0;
 
         StrategyType strategyType = tokenToStrategy[_token];
