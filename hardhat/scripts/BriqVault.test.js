@@ -119,17 +119,17 @@ async function deposit(deployer, user, whale, usdc, briqShares, strategyCoordina
 
   const depositAmount = ethers.parseUnits("100", 6);
 
-  await usdc.connect(whale).transfer(deployer.address, depositAmount);
-  await usdc.connect(deployer).approve(await briqVault.getAddress(), depositAmount);
+  await usdc.connect(whale).transfer(user.address, depositAmount);
+  await usdc.connect(user).approve(await briqVault.getAddress(), depositAmount);
   
-  await briqVault.connect(deployer).deposit(USDC_ADDRESS, depositAmount);
+  await briqVault.connect(user).deposit(USDC_ADDRESS, depositAmount);
   logLine("Deposit Executed", "✅");
 
   const balance0 = await strategyCoordinator.getStrategyBalance(USDC_ADDRESS);
   logLine("AAVE Balance", `${ethers.formatUnits(balance0, 6)} USDC`);
 
   // Get BriqShares balance for depositer
-  const sharesBalance0 = await briqShares.balanceOf(deployer.address);
+  const sharesBalance0 = await briqShares.balanceOf(user.address);
   logLine("Depositor Shares", `${ethers.formatUnits(sharesBalance0, 18)} BRIQ`);
 
   // Set strategy 1
@@ -146,12 +146,39 @@ async function deposit(deployer, user, whale, usdc, briqShares, strategyCoordina
   logLine("Compound Balance", `${ethers.formatUnits(balance0, 6)} USDC`);
 
   // Get BriqShares balance for depositer
-  const sharesBalance1 = await briqShares.balanceOf(deployer.address);
+  const sharesBalance1 = await briqShares.balanceOf(user.address);
   logLine("Depositor Shares", `${ethers.formatUnits(sharesBalance1, 18)} BRIQ`);
 
   // Get total share count
   const totalShares = await briqShares.totalSupply();
   logLine("Total Shares", `${ethers.formatUnits(totalShares, 18)} BRIQ`);
+}
+
+async function withdraw(deployer, user, briqShares, strategyAave, strategyCompound, strategyCoordinator, briqVault) {
+  // Strategy 0 withdrawal
+  await strategyCoordinator.connect(deployer).setStrategyForToken(USDC_ADDRESS, 0);
+  await logCoordinatorState("Withdrawal Srategy 0", strategyCoordinator);
+
+  const compoundBalanceBefore = await strategyCompound.balanceOf(USDC_ADDRESS);
+  logLine("Compound USDC Balance Before", `${ethers.formatUnits(compoundBalanceBefore, 6)} USDC`);
+  const aaveBalanceBefore = await strategyAave.balanceOf(USDC_ADDRESS);
+  logLine("Aave USDC Balance Before", `${ethers.formatUnits(aaveBalanceBefore, 6)} USDC\n`);
+
+  const userSharesBefore = await briqShares.balanceOf(user.address);
+  logLine("User Share Balance Before", `${ethers.formatUnits(userSharesBefore, 18)} BRIQ`);
+
+  const sharesToWithdraw = ethers.parseUnits("120", 18);
+  logLine("Withdrawing...", `${ethers.formatUnits(sharesToWithdraw)} shares`);
+  await briqVault.connect(user).withdraw(USDC_ADDRESS, sharesToWithdraw);
+  logLine("Withdrawal Executed", "✅");
+
+  const userSharesAfter = await briqShares.balanceOf(user.address);
+  logLine("User Share Balance After", `${ethers.formatUnits(userSharesAfter, 18)} BRIQ\n`);
+
+  const compoundBalanceAfter = await strategyCompound.balanceOf(USDC_ADDRESS);
+  logLine("Compound USDC Balance After", `${ethers.formatUnits(compoundBalanceAfter, 6)} USDC`);
+  const aaveBalanceAfter = await strategyAave.balanceOf(USDC_ADDRESS);
+  logLine("Aave USDC Balance After", `${ethers.formatUnits(aaveBalanceAfter, 6)} USDC`);
 }
 
 async function runTest() {
@@ -160,6 +187,7 @@ async function runTest() {
   const { deployer, user, whale, usdc, briqShares, strategyCompound, strategyAave, strategyCoordinator, briqVault } = await setupEnvironment();
   await configureStrategyForToken(deployer, strategyCompound, strategyAave, strategyCoordinator);
   await deposit(deployer, user, whale, usdc, briqShares, strategyCoordinator, briqVault);
+  await withdraw(deployer, user, briqShares, strategyAave, strategyCompound, strategyCoordinator, briqVault);
 }
 
 async function main() {

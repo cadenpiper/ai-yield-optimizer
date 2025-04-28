@@ -22,8 +22,6 @@ contract BriqVault is Ownable, ReentrancyGuard {
         briqShares = BriqShares(_briqShares);
     }
 
-    // onlyRupert modifier
-
     function deposit(address _token, uint256 _amount) external nonReentrant {
         if (_amount == 0) revert Errors.InvalidAmount();
 
