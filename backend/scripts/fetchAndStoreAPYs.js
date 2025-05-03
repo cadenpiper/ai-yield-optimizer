@@ -17,6 +17,7 @@ const signer = new ethers.Wallet(process.env.PRIVATE_KEY, sepoliaProvider);
 /////////// SUBGRAPH ENDPOINTS
 /////////////////////////////////////////////////////////////////////////////
 
+// Replace Moonwell and integrate Compound V3 (Comet)
 const MOONWELL_SUBGRAPH_URL = `https://gateway.thegraph.com/api/${process.env.GRAPHQL_API_KEY}/subgraphs/id/33ex1ExmYQtwGVwri1AP3oMFPGSce6YbocBP7fWbsBrg`;
 const AAVE_V3_SUBGRAPH_URL = `https://gateway.thegraph.com/api/${process.env.GRAPHQL_API_KEY}/subgraphs/id/GQFbb95cE6d8mV989mL5figjaGaKCQB3xqYrr1bRyXqF`;
 
@@ -29,6 +30,7 @@ const ABI = [
   "function getPool() external view returns (address)"
 ];
 
+// Either call smart contracts like Aave above or query The Graph for Compound V3
 const moonwellQuery = gql`
 {
   markets(where: { inputToken_: { symbol: "USDC" } }) {
@@ -51,6 +53,7 @@ const moonwellQuery = gql`
 }
 `;
 
+// Add getCompoundPoolAddress(), delete Moonwell
 async function getMoonwellPoolAddress() {
   try {
     console.log("\nFetching Moonwell pool address...");
@@ -104,6 +107,7 @@ const aaveAPYQuery = gql`
 }
 `;
 
+// Add fetchCompoundAPY(), delete Moonwell
 async function fetchMoonwellAPY() {
   try {
     console.log("\nFetching Moonwell APY...");
@@ -161,6 +165,7 @@ async function fetchAaveAPY(aavePoolAddress) {
   }
 }
 
+// Remove APYStorage contract. Add strategy contracts, BriqVault, and BriqShares contracts
 /////////////////////////////////////////////////////////////////////////////
 /////////// STORING APY DATA IN APYStorage.sol
 /////////////////////////////////////////////////////////////////////////////
@@ -201,6 +206,7 @@ async function safeUpdateAPY(poolAddress, formattedAPY, name) {
   }
 }
 
+// Restructure script flow to include new contracts
 /////////////////////////////////////////////////////////////////////////////
 /////////// RUNNING EVERYTHING IN SEQUENCE
 /////////////////////////////////////////////////////////////////////////////
